@@ -397,18 +397,81 @@ function syncContentTypeUI() {
   }
 }
 
+// ==========================================
+// BANDIT PERSISTENCE HELPERS (Bug 2a)
+// ==========================================
+// Fixed normalization range shared by seeding AND runtime scoring (Bug 5 fix)
+const POP_NORM_MIN = 0;
+const POP_NORM_MAX = 100;
+
+/**
+ * Derive a stable localStorage key from the current onboarding profile
+ * so taste signals don't bleed between different language/genre combos.
+ */
+function getBanditProfileKey() {
+  const sortedLangs = [...state.userSelectedLanguages].sort().join('-');
+  const sortedGenres = [...state.userSelectedGenreIds].sort((a, b) => a - b).join('-');
+  return `swipeflix_bandit_${state.contentType}_${sortedLangs}_${sortedGenres}`;
+}
+
+/** Serialise and save current model to localStorage. */
+function saveBanditModel() {
+  try {
+    const key = getBanditProfileKey();
+    const payload = JSON.stringify({
+      Ainv: state.banditModel.Ainv,
+      b: state.banditModel.b,
+      alpha: state.banditModel.alpha
+    });
+    localStorage.setItem(key, payload);
+  } catch (e) {
+    // Gracefully ignore quota errors
+    console.warn('[bandit] localStorage save failed:', e);
+  }
+}
+
+/** Try to load a saved model for the current profile; returns null on miss. */
+function loadBanditModel() {
+  try {
+    const key = getBanditProfileKey();
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.Ainv && parsed.b) return parsed;
+  } catch (e) {
+    console.warn('[bandit] localStorage load failed:', e);
+  }
+  return null;
+}
+
 // Initialize LinUCB Bandit Model based on Onboarding selection (Onboarding virtual-swipe cold-start)
+// Bug 2a: attempts to restore a persisted model first; falls back to cold-start seeding.
+// Bug 5:  uses fixed POP_NORM_MIN/MAX everywhere so seed and runtime features are on the same scale.
 function initBanditModel() {
+  // Try to restore a saved model for this profile first (Bug 2a)
+  const saved = loadBanditModel();
+  if (saved) {
+    state.banditModel = {
+      Ainv: saved.Ainv,
+      b: saved.b,
+      alpha: saved.alpha || 0.6
+    };
+    console.log('[bandit] Restored persisted model for profile:', getBanditProfileKey());
+    return;
+  }
+
+  // Cold-start: build from scratch using onboarding selection
   state.banditModel = {
     Ainv: identityMatrix(FEATURE_DIM),
     b: new Array(FEATURE_DIM).fill(0),
     alpha: 0.6
   };
 
+  // Bug 5: use the global fixed normalization range for seeding (same as runtime)
   const context = {
     userSelectedLanguages: state.userSelectedLanguages,
-    minPop: 0,
-    maxPop: 100
+    minPop: POP_NORM_MIN,
+    maxPop: POP_NORM_MAX
   };
 
   state.userSelectedGenreIds.forEach(genreId => {
@@ -459,12 +522,25 @@ function showToast(message, type = 'info') {
 // ==========================================
 // CORE DISCOVERY ENGINE & HYDRATION
 // ==========================================
+
+// Bug 2b: per-session random seed — lives in memory only (not persisted).
+// Picked once per startSession(); gives variety even on cold-start / first-time sessions.
+const SESSION_SORT_OPTIONS = ['popularity.desc', 'vote_average.desc', 'revenue.desc'];
+let sessionSortBy = 'popularity.desc';
+let sessionPageOffset = 0;
+
 async function startSession() {
   state.currentPage = 1;
   state.viewStateStack = [];
   state.discardList = [];
   state.likedArray = [];
   state.undoStack = [];
+
+  // Bug 2b: pick a fresh random seed for this session
+  sessionSortBy = SESSION_SORT_OPTIONS[Math.floor(Math.random() * SESSION_SORT_OPTIONS.length)];
+  // Random page offset in [0, 8] so two identical onboarding sessions start from different TMDB pages
+  sessionPageOffset = Math.floor(Math.random() * 9);
+  console.log(`[session] seed — sortBy=${sessionSortBy} pageOffset=${sessionPageOffset}`);
   
   likesCount.textContent = '0';
   btnUndo.disabled = true;
@@ -566,9 +642,17 @@ window.refreshStack = async function() {
 };
 
 // Hydrates the buffer asynchronously when queue < 4 (FR-2.3)
+// Only calls renderStack() if the stack was already empty when hydration started —
+// i.e. the user ran out of cards and needs new ones shown. When cards are already
+// on screen, results are pushed silently so the current top card is never replaced.
 async function hydrateBuffer(attempts = 1) {
   if (state.isFetching) return;
   state.isFetching = true;
+
+  // Snapshot BEFORE the async fetch: were there already cards showing?
+  // If yes, we must NOT call renderStack() when we finish — doing so would
+  // tear down and rebuild the DOM, making a new card appear above the current one.
+  const stackWasEmpty = state.viewStateStack.length === 0;
 
   // --- Compute current theta to find top coarse genres ---
   const theta = matVecMul(state.banditModel.Ainv, state.banditModel.b);
@@ -582,17 +666,18 @@ async function hydrateBuffer(attempts = 1) {
   }
   coarseGenres.sort((a, b) => b.weight - a.weight);
   const topGenreIds = coarseGenres.slice(0, 5).map(g => g.id);
+  console.log('[bandit] top-5 coarse genres sent to /api/discover:', topGenreIds);
 
   // Fallback to initial onboarding selection if vector is empty
   const genreFilter = topGenreIds.length > 0 ? topGenreIds : [...state.userSelectedGenreIds];
   const genresQuery = genreFilter.join('|');
   const langQuery   = state.userSelectedLanguages.join('|');
 
-  // Strict user genre selections
-  const userGenresQuery = state.userSelectedGenreIds.join('|');
+  // Bug 2b: pass session seed params to server so variety is real, not cached away (Bug 3 fix)
+  const seedParams = `&sortBy=${encodeURIComponent(sessionSortBy)}&pageOffset=${sessionPageOffset}`;
 
   try {
-    const url = `/api/discover?lang=${langQuery}&genres=${genresQuery}&userGenres=${userGenresQuery}&page=${state.currentPage}&contentType=${state.contentType}`;
+    const url = `/api/discover?lang=${langQuery}&genres=${genresQuery}&page=${state.currentPage}&contentType=${state.contentType}${seedParams}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error('API fetch failed');
 
@@ -604,11 +689,11 @@ async function hydrateBuffer(attempts = 1) {
 
       if (newMovies.length > 0) {
         // --- Client-side LinUCB Scoring ---
-        const popValues = newMovies.map(m => m.popularity || 0);
+        // Bug 5: use fixed normalization range so scoring is consistent with seed-time (POP_NORM_MIN/MAX)
         const context = {
           userSelectedLanguages: state.userSelectedLanguages,
-          minPop: Math.min(...popValues, 0),
-          maxPop: Math.max(...popValues, 100)
+          minPop: POP_NORM_MIN,
+          maxPop: POP_NORM_MAX
         };
 
         newMovies = newMovies.map(item => {
@@ -633,7 +718,12 @@ async function hydrateBuffer(attempts = 1) {
     }
 
     state.isFetching = false;
-    renderStack();
+
+    // Only re-render if the deck was empty before this fetch — otherwise the
+    // new movies were silently appended and the current card stays on screen.
+    if (stackWasEmpty) {
+      renderStack();
+    }
   } catch (error) {
     console.error('Hydration attempt failed:', error);
     if (attempts < 3) {
@@ -645,7 +735,7 @@ async function hydrateBuffer(attempts = 1) {
     } else {
       state.isFetching = false;
       showToast('Having issues connecting to server. Please check your connection.', 'warning');
-      renderStack();
+      if (stackWasEmpty) renderStack(); // show empty-state message only if deck was already gone
     }
   }
 }
@@ -961,6 +1051,8 @@ function commitSwipe(direction) {
     setTimeout(() => {
       renderStack();
       checkHydrationThreshold();
+      // Re-rank the deep buffer (cards 3+) in the background after animation settles
+      scheduleBackgroundReRank();
     }, 200);
     
   } else if (direction === 'left') {
@@ -984,35 +1076,86 @@ function commitSwipe(direction) {
     setTimeout(() => {
       renderStack();
       checkHydrationThreshold();
+      // Re-rank the deep buffer (cards 3+) in the background after animation settles
+      scheduleBackgroundReRank();
     }, 200);
   }
 }
 
 // Client-side LinUCB Model Update
+// Only does the bare minimum on the swipe frame: matrix update + b update.
+// Everything else (persistence, re-ranking) is deferred to idle time via scheduleBackgroundReRank.
 function updateLinUCBModel(movie, reward) {
-  const popValues = state.viewStateStack.map(m => m.popularity || 0);
   const context = {
     userSelectedLanguages: state.userSelectedLanguages,
-    minPop: Math.min(...popValues, 0),
-    maxPop: Math.max(...popValues, 100)
+    minPop: POP_NORM_MIN,
+    maxPop: POP_NORM_MAX
   };
   const x = buildFeatureVector(movie, context);
   
-  // Sherman-Morrison update of Ainv
+  // Sherman-Morrison update of Ainv (this must be synchronous — needed immediately for scoring)
   state.banditModel.Ainv = sherman_morrison_update(state.banditModel.Ainv, x);
   
   // Update b
   state.banditModel.b = vecAdd(state.banditModel.b, vecScale(x, reward));
-  
-  // Log learned weights (theta) to console for development verification
-  const theta = matVecMul(state.banditModel.Ainv, state.banditModel.b);
-  console.log("LinUCB Updated Theta:", theta);
-  const genreWeights = MOVIE_GENRES_IDS.map((gid, idx) => {
-    const genreObj = MOVIE_GENRES.find(g => g.id === gid);
-    return { name: genreObj ? genreObj.name : gid, weight: theta[idx] };
-  });
-  genreWeights.sort((a, b) => b.weight - a.weight);
-  console.log("LinUCB Top Learned Genres:", genreWeights.slice(0, 5));
+  // Persistence and re-ranking are deferred — see scheduleBackgroundReRank()
+}
+
+/**
+ * Schedules a background idle task that:
+ * 1. Persists the updated bandit model to localStorage (Bug 2a)
+ * 2. Re-scores and re-sorts only cards at index 3+ in viewStateStack (Bug 4)
+ *
+ * The first 3 cards (indices 0-2) are frozen so the user never sees cards
+ * shuffle in front of them. Everything runs via requestIdleCallback so it
+ * has zero impact on swipe animation frame timing.
+ */
+function scheduleBackgroundReRank() {
+  const work = () => {
+    // --- Persist model (Bug 2a) ---
+    saveBanditModel();
+
+    // --- Log for dev verification ---
+    const theta = matVecMul(state.banditModel.Ainv, state.banditModel.b);
+    const genreWeights = MOVIE_GENRES_IDS.map((gid, idx) => {
+      const genreObj = MOVIE_GENRES.find(g => g.id === gid);
+      return { name: genreObj ? genreObj.name : gid, weight: theta[idx] };
+    });
+    genreWeights.sort((a, b) => b.weight - a.weight);
+    console.log('[bandit] background re-rank — top genres:', genreWeights.slice(0, 5).map(g => g.name));
+
+    // --- Re-rank deep buffer (index 3+) only ---
+    // Cards 0-2 are locked so the next few swipes feel instant and predictable.
+    // Only the "upcoming" tail gets silently reordered toward preferred genres.
+    const SAFE_HEAD = 3;
+    if (state.viewStateStack.length <= SAFE_HEAD) return;
+
+    const context = {
+      userSelectedLanguages: state.userSelectedLanguages,
+      minPop: POP_NORM_MIN,
+      maxPop: POP_NORM_MAX
+    };
+
+    const stableHead = state.viewStateStack.slice(0, SAFE_HEAD);
+    const tail = state.viewStateStack.slice(SAFE_HEAD)
+      .map(item => ({
+        item,
+        score: dotProduct(theta, buildFeatureVector(item, context))
+               + state.banditModel.alpha * Math.sqrt(quadForm(buildFeatureVector(item, context), state.banditModel.Ainv))
+      }))
+      .sort((a, b) => b.score - a.score)
+      .map(({ item }) => item);
+
+    state.viewStateStack = [...stableHead, ...tail];
+  };
+
+  // requestIdleCallback fires when the browser has a free moment (after paint, after input).
+  // Fallback to setTimeout(0) for browsers that don't support it.
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(work, { timeout: 1000 });
+  } else {
+    setTimeout(work, 0);
+  }
 }
 
 // Check if stack count falls below 4

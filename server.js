@@ -158,28 +158,31 @@ async function fetchProviders(itemId, regionList, mediaType = 'movie') {
 // GET /api/discover
 // Query params:
 //   lang        - pipe-separated ISO language codes for coarse TMDB filter
-//   genres      - pipe-separated genre IDs (top-5 positive-weight, coarse OR filter)
-//   userGenres  - pipe-separated genre IDs explicitly selected by the user (strict post-filter)
-//   page        - page number
+//   genres      - pipe-separated genre IDs (top-5 positive-weight, coarse OR filter from bandit)
+//   page        - page number (base, before pageOffset is applied)
+//   pageOffset  - random per-session page offset for variety (Bug 2b)
+//   sortBy      - TMDB sort_by field; default 'popularity.desc' (Bug 2b)
 //   contentType - 'both' | 'movie' | 'tv'
 app.get('/api/discover', async (req, res) => {
-  const { lang = '', genres = '', userGenres = '', page = 1, contentType = 'both' } = req.query;
-  const pageNum = parseInt(page, 10) || 1;
+  const { lang = '', genres = '', page = 1, pageOffset = 0, sortBy = 'popularity.desc', contentType = 'both' } = req.query;
+  const pageNum = Math.max(1, (parseInt(page, 10) || 1) + (parseInt(pageOffset, 10) || 0));
 
   if (!process.env.TMDB_API_KEY) {
     return res.status(503).json({ error: 'TMDB API key not configured.' });
   }
 
-  // Parse strict user-selected genre IDs for post-filtering
-  const userGenreIds = userGenres
-    ? userGenres.split('|').map(g => parseInt(g, 10)).filter(Boolean)
-    : [];
+  // Validate sortBy against an allowlist for safety
+  const ALLOWED_SORT = ['popularity.desc', 'vote_average.desc', 'revenue.desc', 'primary_release_date.desc'];
+  const safeSortBy = ALLOWED_SORT.includes(sortBy) ? sortBy : 'popularity.desc';
+
+  // vote_average.desc needs a floor filter so results aren't garbage
+  const voteFloor = safeSortBy === 'vote_average.desc' ? '&vote_count.gte=200' : '&vote_count.gte=20';
 
   // Build base TMDB query parameters
-  const baseParams = `api_key=${process.env.TMDB_API_KEY}&sort_by=popularity.desc&page=${pageNum}&vote_count.gte=20`;
+  const baseParams = `api_key=${process.env.TMDB_API_KEY}&sort_by=${safeSortBy}&page=${pageNum}${voteFloor}`;
   const langParam   = lang   ? `&with_original_language=${lang}`  : '';
-  
-  // Coarse movie genre filter
+
+  // Coarse movie genre filter (derived from bandit top-5 weights — trusted directly)
   const genreParamMovie = genres
     ? `&with_genres=${genres}`
     : '';
@@ -193,7 +196,8 @@ app.get('/api/discover', async (req, res) => {
   const movieUrl = `https://api.themoviedb.org/3/discover/movie?${baseParams}${langParam}${genreParamMovie}`;
   const tvUrl    = `https://api.themoviedb.org/3/discover/tv?${baseParams}${langParam}${genreParamTv}`;
 
-  const cacheKey = `discover:${lang}:${genres}:${pageNum}`;
+  // Cache key includes sortBy and effective page so session seeds don't collide (Bug 3 fix)
+  const cacheKey = `discover:${lang}:${genres}:${pageNum}:${safeSortBy}`;
 
   try {
     let combined = [];
@@ -235,10 +239,10 @@ app.get('/api/discover', async (req, res) => {
       totalPages = Math.max(movieData.total_pages || 1, tvData.total_pages || 1);
     }
 
-    // Strict genre post-filter using itemMatchesGenres helper
-    if (userGenreIds.length > 0) {
-      combined = combined.filter(item => itemMatchesGenres(item, userGenreIds));
-    }
+    // Bug 1 fix: strict genre post-filter removed — the bandit-derived coarse `genres` param
+    // already reflects learned + onboarding-seeded weights; hard-filtering back to onboarding genres
+    // prevented the model from ever changing what the user sees.
+    console.log(`[discover] lang=${lang} genres=${genres} sortBy=${safeSortBy} page=${pageNum} results=${combined.length}`);
 
     return res.json({
       results: combined,
