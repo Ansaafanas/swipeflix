@@ -559,8 +559,18 @@ body {
 }
 
 /* Depth Stack Effects (scale card below dynamically) */
-.movie-card:nth-child(n-1) { z-index: 10; }
-.movie-card:nth-child(n-2) { z-index: 9; transform: scale(0.94) translateY(0px); opacity: 0.85; }
+.movie-card:last-child {
+  z-index: 10;
+  opacity: 1 !important;
+}
+.movie-card:nth-last-child(2) {
+  z-index: 9;
+  transform: scale(0.94) translateY(0px);
+  opacity: 0.85;
+}
+.movie-card:nth-last-child(n+3) {
+  display: none;
+}
 
 /* Dynamic gesture hints (hidden in clean mockup but kept subtle for UX) */
 .gesture-hints {

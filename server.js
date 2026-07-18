@@ -422,16 +422,23 @@ app.get('/api/discover', async (req, res) => {
   const pageNum = parseInt(page, 10) || 1;
 
   if (isLiveMode()) {
-    const cacheKey = `discover:${lang}:${genres}:${pageNum}`;
+    // Randomize TMDB sorting parameter to guarantee unique flows on each session
+    const sortOptions = [
+      'popularity.desc',
+      'revenue.desc',
+      'vote_average.desc',
+      'vote_count.desc',
+      'release_date.desc'
+    ];
+    const randomSort = sortOptions[Math.floor(Math.random() * sortOptions.length)];
+    const cacheKey = `discover:${lang}:${genres}:${pageNum}:${randomSort}`;
     
     // Construct TMDB URL dynamically
-    let url = `https://api.themoviedb.org/3/discover/movie?api_key=${process.env.TMDB_API_KEY}&sort_by=popularity.desc&page=${pageNum}`;
+    let url = `https://api.themoviedb.org/3/discover/movie?api_key=${process.env.TMDB_API_KEY}&sort_by=${randomSort}&page=${pageNum}`;
     if (lang) {
-      // TMDB supports pipe for OR language searches
       url += `&with_original_languages=${lang}`;
     }
     if (genres) {
-      // TMDB supports pipe for OR genre searches
       url += `&with_genres=${genres}`;
     }
     
@@ -442,8 +449,15 @@ app.get('/api/discover', async (req, res) => {
         return await response.json();
       }, 15 * 60 * 1000); // 15 mins TTL
       
+      // Shuffle the results array before returning to guarantee high entropy cards sequence
+      const shuffledResults = [...(data.results || [])];
+      for (let i = shuffledResults.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffledResults[i], shuffledResults[j]] = [shuffledResults[j], shuffledResults[i]];
+      }
+      
       return res.json({
-        results: data.results,
+        results: shuffledResults,
         page: data.page,
         total_pages: data.total_pages
       });
@@ -481,11 +495,18 @@ app.get('/api/discover', async (req, res) => {
     filtered = MOCK_MOVIES;
   }
 
+  // Shuffle the filtered list to guarantee fully randomized movie deck sequencing (FR-4.3)
+  const shuffledMock = [...filtered];
+  for (let i = shuffledMock.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffledMock[i], shuffledMock[j]] = [shuffledMock[j], shuffledMock[i]];
+  }
+
   // Pagination simulation (each page is size 10)
   const pageSize = 10;
   const startIndex = (pageNum - 1) * pageSize;
-  const pagedResults = filtered.slice(startIndex, startIndex + pageSize);
-  const totalPages = Math.ceil(filtered.length / pageSize) || 1;
+  const pagedResults = shuffledMock.slice(startIndex, startIndex + pageSize);
+  const totalPages = Math.ceil(shuffledMock.length / pageSize) || 1;
 
   // Simulate latency
   setTimeout(() => {
