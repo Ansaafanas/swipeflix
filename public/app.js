@@ -515,7 +515,7 @@ function setupPullToRefresh() {
     cardStack.style.transform = '';
     
     if (pullY > 40) {
-      refreshStack();
+      window.location.reload();
     }
     pullY = 0;
     
@@ -894,13 +894,8 @@ function setupCardGestures(card) {
         return;
       }
       
-      // Threshold validation: swipe up to refresh, commit swipes vs. snap-back
-      if (deltaY < -120 && Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
-        card.className = 'movie-card swipe-out-up';
-        setTimeout(() => {
-          window.location.reload();
-        }, 300);
-      } else if (deltaX > 120) {
+      // Threshold validation: commit vs. snap-back (Swipe Up is removed)
+      if (deltaX > 120) {
         commitSwipe('right');
       } else if (deltaX < -120) {
         commitSwipe('left');
