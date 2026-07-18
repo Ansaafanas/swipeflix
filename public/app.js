@@ -516,8 +516,11 @@ async function hydrateBuffer(attempts = 1) {
   });
   const weightsQuery = weightPairs.join(',');
 
+  // --- Strict genre post-filter: user's explicitly selected genres ---
+  const userGenresQuery = state.userSelectedGenreIds.join('|');
+
   try {
-    const url = `/api/discover?lang=${langQuery}&genres=${genresQuery}&page=${state.currentPage}&weights=${encodeURIComponent(weightsQuery)}`;
+    const url = `/api/discover?lang=${langQuery}&genres=${genresQuery}&userGenres=${userGenresQuery}&page=${state.currentPage}&weights=${encodeURIComponent(weightsQuery)}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error('API fetch failed');
 
@@ -654,6 +657,7 @@ function createCardElement(movie, isTopCard) {
 
       <img class="card-poster" src="${posterUrl}" alt="${movie.title}" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=500&auto=format&fit=crop';" loading="lazy">
       <div class="card-overlay">
+        ${movie.media_type === 'tv' ? '<span class="card-type-badge">TV Series</span>' : ''}
         <h2 class="card-title">${movie.title}</h2>
         <div class="card-meta">
           <span class="meta-tag">${releaseYear}</span>
@@ -990,7 +994,7 @@ async function endSwipingSession() {
     return;
   }
 
-  const movieIds = state.likedArray.map(m => m.id);
+  const movieIds = state.likedArray.map(m => ({ id: m.id, mediaType: m.media_type || 'movie' }));
   const region   = detectUserRegion();
 
   try {

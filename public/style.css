@@ -558,6 +558,23 @@ body {
   gap: 4px;
 }
 
+.card-type-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(99, 102, 241, 0.85);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 20px;
+  backdrop-filter: blur(4px);
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+
 /* Depth Stack Effects (scale card below dynamically) */
 .movie-card:last-child {
   z-index: 10;
