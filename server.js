@@ -320,6 +320,39 @@ const BASE_MOCK_MOVIES = [
     popularity: 33.1,
     release_date: "2019-09-18",
     vote_average: 8.2
+  },
+  {
+    id: 244049,
+    title: "Drishyam",
+    poster_path: "/7d8GLneJkF81q1POdK7VUrjWafX.jpg",
+    synopsis: "A man goes to extreme lengths to save his family from punishment after they accidentally commit a crime.",
+    genre_ids: [18, 53, 80],
+    original_language: "ml",
+    popularity: 42.5,
+    release_date: "2013-12-19",
+    vote_average: 8.4
+  },
+  {
+    id: 1199580,
+    title: "Manjummel Boys",
+    poster_path: "/4N8WNoZSOELr35J21Du6XiYeakN.jpg",
+    synopsis: "A group of friends from a small town face a harrowing rescue mission when one of them falls into deep caves.",
+    genre_ids: [12, 18, 53],
+    original_language: "ml",
+    popularity: 58.1,
+    release_date: "2024-02-22",
+    vote_average: 8.2
+  },
+  {
+    id: 341895,
+    title: "Premam",
+    poster_path: "/wfMgsfDrtouYOM6MbrkHtU96Xij.jpg",
+    synopsis: "A young man finds romance in three different stages of his life, discovering himself along the way.",
+    genre_ids: [35, 18, 10749],
+    original_language: "ml",
+    popularity: 38.6,
+    release_date: "2015-05-29",
+    vote_average: 8.3
   }
 ];
 
@@ -384,7 +417,7 @@ const MOCK_MOVIES = [];
       popularity: parseFloat((Math.random() * 50 + 10).toFixed(1)),
       vote_average: parseFloat((Math.random() * 3 + 6).toFixed(1)),
       // Randomize languages and genres for full catalog distribution
-      original_language: ['en', 'es', 'fr', 'ja', 'de', 'ko', 'zh', 'it', 'pt', 'ru', 'hi', 'da'][Math.floor(Math.random() * 12)],
+      original_language: ['en', 'es', 'fr', 'ja', 'de', 'ko', 'zh', 'it', 'pt', 'ru', 'hi', 'da', 'ml'][Math.floor(Math.random() * 13)],
       genre_ids: [
         [28, 12], [35, 10749], [18, 35], [16, 10751], [878, 28], [53, 9648], [14, 12], [27, 53], [36, 18], [10752, 28]
       ][Math.floor(Math.random() * 10)]
