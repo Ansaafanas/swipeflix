@@ -174,6 +174,11 @@ const detailSynopsis = document.getElementById('detail-synopsis');
 const likeOverlay = document.querySelector('.like-overlay');
 const discardOverlay = document.querySelector('.discard-overlay');
 
+// Media type badge elements
+const mediaTypeBadge  = document.getElementById('media-type-badge');
+const mediaTypeIcon   = document.getElementById('media-type-icon');
+const mediaTypeLabel  = document.getElementById('media-type-label');
+
 
 // ==========================================
 // INITIALIZATION
@@ -552,6 +557,21 @@ async function hydrateBuffer(attempts = 1) {
   }
 }
 
+// Update the media-type badge based on the current top card
+function updateMediaTypeBadge() {
+  if (!mediaTypeBadge) return;
+  const topItem = state.viewStateStack[0];
+  if (!topItem) {
+    mediaTypeBadge.classList.remove('type-movie', 'type-tv');
+    return;
+  }
+  const isTV = topItem.media_type === 'tv';
+  mediaTypeIcon.textContent  = isTV ? '📺' : '🎬';
+  mediaTypeLabel.textContent = isTV ? 'TV Series' : 'Movie';
+  mediaTypeBadge.classList.toggle('type-tv',    isTV);
+  mediaTypeBadge.classList.toggle('type-movie', !isTV);
+}
+
 // Display loader in card area
 function renderStackLoading() {
   cardStack.innerHTML = `
@@ -629,6 +649,9 @@ function renderStack() {
     }
     state.undoAnimating = null;
   }
+
+  // Update the floating media-type badge to reflect the new top card
+  updateMediaTypeBadge();
 }
 
 // Creates single DOM element representing card
@@ -657,7 +680,6 @@ function createCardElement(movie, isTopCard) {
 
       <img class="card-poster" src="${posterUrl}" alt="${movie.title}" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=500&auto=format&fit=crop';" loading="lazy">
       <div class="card-overlay">
-        ${movie.media_type === 'tv' ? '<span class="card-type-badge">TV Series</span>' : ''}
         <h2 class="card-title">${movie.title}</h2>
         <div class="card-meta">
           <span class="meta-tag">${releaseYear}</span>

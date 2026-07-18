@@ -436,6 +436,43 @@ body {
   pointer-events: none;
 }
 
+/* Media-type badge — mirrors the likes badge on the left */
+.media-type-badge {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 40;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  pointer-events: none;
+  transition: background 0.25s ease, color 0.25s ease;
+  color: #1a1a2e;
+}
+
+/* Movie variant — warm amber tint */
+.media-type-badge.type-movie {
+  background: rgba(251, 191, 36, 0.18);
+  border-color: rgba(251, 191, 36, 0.35);
+  color: #92400e;
+}
+
+/* TV Series variant — indigo tint */
+.media-type-badge.type-tv {
+  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(99, 102, 241, 0.3);
+  color: #3730a3;
+}
+
 /* ==========================================
    SWIPE CARD STACK LAYOUT
    ========================================== */
