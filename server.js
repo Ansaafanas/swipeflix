@@ -600,10 +600,14 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Start the server
-app.listen(PORT, () => {
-  console.log(`===================================================`);
-  console.log(`SwipeFlix Server running at http://localhost:${PORT}`);
-  console.log(`Running in: ${isLiveMode() ? 'LIVE TMDB API' : 'MOCK DATABASE'} mode`);
-  console.log(`===================================================`);
-});
+// Start the server (local development only)
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`===================================================`);
+    console.log(`SwipeFlix Server running at http://localhost:${PORT}`);
+    console.log(`Running in: ${isLiveMode() ? 'LIVE TMDB API' : 'MOCK DATABASE'} mode`);
+    console.log(`===================================================`);
+  });
+}
+
+export default app;
