@@ -469,24 +469,25 @@ function setupPullToRefresh() {
   cardStack.addEventListener('pointercancel', endPull);
 }
 
-// Refresh stack without wiping likes or discards, introducing category variety (FR-4.x)
+// Refresh stack without wiping likes or discards.
+// Injects one exploratory genre at a low weight (0.3) so real signal is not overwritten.
 window.refreshStack = async function() {
   renderStackLoading();
   state.viewStateStack = [];
-  
-  // Choose a random genre from MOVIE_GENRES not already selected to inject variety
-  const availableGenres = MOVIE_GENRES.filter(g => !state.userSelectedGenreIds.includes(g.id));
+
+  // Pick a genre not yet in the preference vector (or with near-zero weight) for gentle exploration
+  const availableGenres = MOVIE_GENRES.filter(g => (state.preferenceVector.get(g.id) || 0) < 0.2);
   if (availableGenres.length > 0) {
     const randomGenre = availableGenres[Math.floor(Math.random() * availableGenres.length)];
-    // Set weight to 1.0 in preference vector so it gets selected in discover query
-    state.preferenceVector.set(randomGenre.id, 1.0);
+    // Use a low exploratory weight so it influences ranking without erasing real preferences
+    state.preferenceVector.set(randomGenre.id, 0.3);
   }
-  
+
   // Loop page back to 1 if we've swiped through all pages
   if (state.currentPage > state.totalPages) {
     state.currentPage = 1;
   }
-  
+
   await hydrateBuffer();
 };
 
@@ -495,46 +496,45 @@ async function hydrateBuffer(attempts = 1) {
   if (state.isFetching) return;
   state.isFetching = true;
 
-  // Build recommendation dynamic filters (FR-4.3 / SDD 4.3)
-  // Get active genres from the preference vector. Select genres with weight >= 0.5
-  let biasedGenres = [];
+  // --- Coarse TMDB genre filter: top 5 genres with positive weight ---
+  let coarseGenres = [];
   state.preferenceVector.forEach((weight, id) => {
-    if (weight >= 0.5) {
-      biasedGenres.push(id);
-    }
+    if (weight > 0) coarseGenres.push({ id, weight });
   });
+  coarseGenres.sort((a, b) => b.weight - a.weight);
+  const topGenreIds = coarseGenres.slice(0, 5).map(g => g.id);
 
-  // If no weights are high enough, fallback to initial onboarding selection
-  if (biasedGenres.length === 0) {
-    biasedGenres = [...state.userSelectedGenreIds];
-  }
+  // Fallback to initial onboarding selection if vector is empty
+  const genreFilter = topGenreIds.length > 0 ? topGenreIds : [...state.userSelectedGenreIds];
+  const genresQuery = genreFilter.join('|');
+  const langQuery   = state.userSelectedLanguages.join('|');
 
-  // Construct query parameters
-  const genresQuery = biasedGenres.join('|');
-  const langQuery = state.userSelectedLanguages.join('|');
+  // --- Build full weights param so server can score ---
+  const weightPairs = [];
+  state.preferenceVector.forEach((weight, id) => {
+    if (weight !== 0) weightPairs.push(`${id}:${weight.toFixed(3)}`);
+  });
+  const weightsQuery = weightPairs.join(',');
 
   try {
-    const response = await fetch(`/api/discover?lang=${langQuery}&genres=${genresQuery}&page=${state.currentPage}`);
+    const url = `/api/discover?lang=${langQuery}&genres=${genresQuery}&page=${state.currentPage}&weights=${encodeURIComponent(weightsQuery)}`;
+    const response = await fetch(url);
     if (!response.ok) throw new Error('API fetch failed');
-    
+
     const data = await response.json();
-    
+
     if (data.results && data.results.length > 0) {
-      // Exclude movies that are already swiped (liked or discarded) in this session
       const swipedIds = new Set([...state.discardList, ...state.likedArray.map(m => m.id)]);
       const newMovies = data.results.filter(movie => !swipedIds.has(movie.id));
-      
       state.viewStateStack.push(...newMovies);
       state.totalPages = data.total_pages;
-      state.currentPage++; // Advance page for next hydration
+      state.currentPage++;
     }
-    
+
     state.isFetching = false;
     renderStack();
   } catch (error) {
-    console.error("Hydration attempt failed:", error);
-    
-    // Exponential backoff retry (capped at 3 attempts) (FR-2.5)
+    console.error('Hydration attempt failed:', error);
     if (attempts < 3) {
       const backoffDelay = Math.pow(2, attempts) * 1000;
       setTimeout(async () => {
@@ -543,8 +543,8 @@ async function hydrateBuffer(attempts = 1) {
       }, backoffDelay);
     } else {
       state.isFetching = false;
-      showToast("Having issues connecting to server. Using local cache.", "warning");
-      renderStack(); // render what we have left
+      showToast('Having issues connecting to server. Please check your connection.', 'warning');
+      renderStack();
     }
   }
 }
@@ -876,12 +876,20 @@ function commitSwipe(direction) {
   }
 }
 
-// Client-side CBF tuning
+// Client-side CBF tuning with recency decay
 function adjustPreferenceVector(genreIds, delta) {
   if (!genreIds) return;
+
+  // Recency decay: reduce the entire vector by 0.97× before applying new delta
+  // This makes the most recent ~10–15 swipes matter more than early ones
+  state.preferenceVector.forEach((weight, id) => {
+    state.preferenceVector.set(id, weight * 0.97);
+  });
+
+  // Apply delta with widened negative clamp (-2.0) so repeated discards have real effect
   genreIds.forEach(id => {
     const currentWeight = state.preferenceVector.get(id) || 0.0;
-    const newWeight = Math.max(-1.0, Math.min(3.0, currentWeight + delta));
+    const newWeight = Math.max(-2.0, Math.min(3.0, currentWeight + delta));
     state.preferenceVector.set(id, newWeight);
   });
 }
@@ -925,15 +933,15 @@ function undoLastSwipe() {
 // ==========================================
 function openMovieDetails(movie) {
   if (!movie) return;
-  
+
   detailTitle.textContent = movie.title;
   detailYear.textContent = movie.release_date ? movie.release_date.split('-')[0] : 'N/A';
   detailRating.textContent = `⭐ ${movie.vote_average ? movie.vote_average.toFixed(1) : 'NR'}`;
   detailLang.textContent = (movie.original_language || 'EN').toUpperCase();
-  
-  // Render genre badges (no emojis!)
+
+  // Render genre badges
   detailGenres.innerHTML = '';
-  movie.genre_ids.forEach(gid => {
+  (movie.genre_ids || []).forEach(gid => {
     const genre = MOVIE_GENRES.find(g => g.id === gid);
     if (genre) {
       const tag = document.createElement('span');
@@ -942,8 +950,9 @@ function openMovieDetails(movie) {
       detailGenres.appendChild(tag);
     }
   });
-  
-  detailSynopsis.textContent = movie.synopsis || "No description available.";
+
+  // Accept both field names: server normalises overview→synopsis, but handle both defensively
+  detailSynopsis.textContent = movie.synopsis || movie.overview || 'No description available.';
   detailsPanel.classList.add('active');
 }
 
@@ -955,32 +964,49 @@ function closeMovieDetails() {
 // ==========================================
 // OPTIMIZATION & MONETIZATION DASHBOARD
 // ==========================================
+// Detect user's likely region from browser locale / timezone
+function detectUserRegion() {
+  try {
+    // navigator.language gives e.g. "ml-IN", "en-US", "ta-IN"
+    const lang = navigator.language || '';
+    const localeParts = lang.split('-');
+    if (localeParts.length >= 2) {
+      return localeParts[localeParts.length - 1].toUpperCase();
+    }
+    // Fallback: try to infer from timezone
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    if (tz.includes('Calcutta') || tz.includes('Kolkata') || tz.includes('India')) return 'IN';
+    if (tz.includes('London')) return 'GB';
+  } catch (e) {}
+  return 'US';
+}
+
 async function endSwipingSession() {
   transitionToScreen(dashboardScreen);
   renderDashboardLoader();
-  
+
   if (state.likedArray.length === 0) {
     renderEmptyDashboard();
     return;
   }
-  
+
   const movieIds = state.likedArray.map(m => m.id);
-  
+  const region   = detectUserRegion();
+
   try {
     const response = await fetch('/api/optimize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ movieIds, region: 'US' })
+      body: JSON.stringify({ movieIds, region })
     });
-    
+
     if (!response.ok) throw new Error('Optimization request failed');
     const result = await response.json();
-    
     renderOptimizationReport(result);
   } catch (error) {
-    console.error("Dashboard optimization engine failed:", error);
-    showToast("Optimization failed. Showing local mock analytics.", "warning");
-    simulateLocalOptimizationReport();
+    console.error('Dashboard optimization engine failed:', error);
+    showToast('Could not load streaming recommendations. Please try again.', 'warning');
+    renderEmptyDashboard();
   }
 }
 
@@ -1006,69 +1032,7 @@ function renderEmptyDashboard() {
   `;
 }
 
-// Local simulation backup in case server has failure
-function simulateLocalOptimizationReport() {
-  const providers = {};
-  state.likedArray.forEach(m => {
-    const mockProviders = {
-      157336: ["Netflix", "Amazon Prime Video"],
-      155: ["Max", "Amazon Prime Video"],
-      129: ["Max", "Netflix"],
-      496243: ["Max", "Hulu"],
-      680: ["Netflix", "Max"],
-      324857: ["Disney+", "Netflix"],
-      194: ["Amazon Prime Video", "Apple TV+"],
-      1417: ["Amazon Prime Video", "Max"],
-      372058: ["Amazon Prime Video"],
-      438631: ["Max", "Hulu"]
-    };
-    
-    const list = mockProviders[m.id] || ["Netflix"];
-    list.forEach(p => {
-      providers[p] = (providers[p] || 0) + 1;
-    });
-  });
-  
-  const logoPaths = {
-    "Netflix": "/wwemzKWzjKYJFfCeiB57q3r4Bcm.png",
-    "Amazon Prime Video": "/giwV9dD17482t72YxV65xJ0rM4n.jpg",
-    "Hulu": "/bxBlRPEPpMVDc4jMhSrTf2339DW.jpg",
-    "Disney+": "/97yvRBw1GzX7fXprcF80er19ot.jpg",
-    "Max": "/fksCUZ9QDWZMUwL2LgMtLckROUN.jpg",
-    "Apple TV+": "/4k11wY2Zg95pT0tT8L4G8636B4D.jpg"
-  };
-
-  const providerLinks = {
-    "netflix": "https://www.netflix.com",
-    "amazon prime video": "https://www.primevideo.com",
-    "hulu": "https://www.hulu.com",
-    "disney+": "https://www.disneyplus.com",
-    "disney plus": "https://www.disneyplus.com",
-    "max": "https://www.max.com",
-    "hbo max": "https://www.max.com",
-    "apple tv+": "https://tv.apple.com",
-    "apple tv plus": "https://tv.apple.com"
-  };
-
-  const providersList = Object.keys(providers).map(name => {
-    const matchCount = providers[name];
-    const matchPercentage = Math.round((matchCount / state.likedArray.length) * 100);
-    const cleanKey = name.toLowerCase().trim();
-    const directLink = providerLinks[cleanKey] || `https://google.com/search?q=${encodeURIComponent(name)}`;
-    return {
-      provider_name: name,
-      match_count: matchCount,
-      match_percentage: matchPercentage,
-      logo_path: logoPaths[name] || null,
-      affiliate_link: directLink
-    };
-  }).sort((a,b) => b.match_percentage - a.match_percentage);
-  
-  renderOptimizationReport({
-    providers: providersList,
-    totalLikedWithProviderData: state.likedArray.length
-  });
-}
+// (simulateLocalOptimizationReport removed — app always uses /api/optimize response)
 
 // Helper methods to cleanly replace broken provider logos without inline HTML double-quote syntax parsing errors (FR-5.4)
 window.handleWinnerLogoError = function(img, providerName) {
@@ -1172,67 +1136,60 @@ function renderOptimizationReport(data) {
     container.appendChild(listCard);
   }
   
-  // 3. Breakdown of Liked Movies Grouped by Provider (Value-Add Feature, no emojis!)
+  // 3. Breakdown of Liked Movies Grouped by Provider
+  // Uses real perMovie data returned by /api/optimize (no hardcoded mappings)
   const breakdownCard = document.createElement('div');
   breakdownCard.className = 'breakdown-card';
   breakdownCard.innerHTML = `<h3 class="breakdown-title">Where to Watch</h3>`;
-  
-  const movieDetailsMap = {};
-  
-  state.likedArray.forEach(m => {
-    const mockProvidersMapping = {
-      157336: ["Netflix", "Amazon Prime Video"],
-      155: ["Max", "Amazon Prime Video"],
-      129: ["Max", "Netflix"],
-      496243: ["Max", "Hulu"],
-      680: ["Netflix", "Max"],
-      324857: ["Disney+", "Netflix"],
-      194: ["Amazon Prime Video", "Apple TV+"],
-      1417: ["Amazon Prime Video", "Max"],
-      372058: ["Amazon Prime Video"],
-      438631: ["Max", "Hulu"],
-      354912: ["Disney+"],
-      98: ["Amazon Prime Video", "Netflix"],
-      546554: ["Netflix"],
-      244786: ["Netflix", "Apple TV+"],
-      772071: ["Netflix", "Amazon Prime Video"],
-      27205: ["Max", "Netflix"],
-      77338: ["Netflix", "Amazon Prime Video"],
-      426426: ["Netflix"],
-      128: ["Max"],
-      11324: ["Amazon Prime Video", "Netflix"],
-      120467: ["Disney+", "Max"],
-      603: ["Max", "Amazon Prime Video"],
-      33157: ["Amazon Prime Video"],
-      531428: ["Hulu"]
-    };
-    
-    const provs = mockProvidersMapping[m.id] || ["Netflix"];
-    provs.forEach(p => {
-      if (data.providers.some(dp => dp.provider_name === p)) {
+
+  const movieDetailsMap = {}; // providerName → [{ title, tier }]
+
+  if (data.perMovie && data.perMovie.length > 0) {
+    // Build a lookup: movieId → title
+    const titleMap = {};
+    state.likedArray.forEach(m => { titleMap[m.id] = m.title; });
+
+    data.perMovie.forEach(({ id, flatrate, rentBuy }) => {
+      const title = titleMap[id];
+      if (!title) return;
+
+      flatrate.forEach(p => {
         if (!movieDetailsMap[p]) movieDetailsMap[p] = [];
-        movieDetailsMap[p].push(m.title);
-      }
+        movieDetailsMap[p].push({ title, tier: 'flatrate' });
+      });
+
+      rentBuy.forEach(p => {
+        if (!movieDetailsMap[p]) movieDetailsMap[p] = [];
+        // Only add if not already listed under flatrate for this movie
+        if (!flatrate.includes(p)) {
+          movieDetailsMap[p].push({ title, tier: 'rent' });
+        }
+      });
     });
-  });
+  }
 
   const breakdownContent = document.createElement('div');
   breakdownContent.className = 'breakdown-content';
-  
-  Object.keys(movieDetailsMap).forEach(provName => {
-    const group = document.createElement('div');
-    group.className = 'provider-group';
-    group.innerHTML = `
-      <div class="provider-group-header">
-        <strong>${provName}</strong>
-      </div>
-      <div class="provider-movie-badges">
-        ${movieDetailsMap[provName].map(title => `<span class="movie-badge">${title}</span>`).join('')}
-      </div>
-    `;
-    breakdownContent.appendChild(group);
-  });
-  
+
+  if (Object.keys(movieDetailsMap).length === 0) {
+    breakdownContent.innerHTML = `<p style="color:var(--text-muted);font-size:0.85rem;padding:8px 0">No streaming data available for your liked movies in your region.</p>`;
+  } else {
+    Object.keys(movieDetailsMap).forEach(provName => {
+      const group = document.createElement('div');
+      group.className = 'provider-group';
+      group.innerHTML = `
+        <div class="provider-group-header"><strong>${provName}</strong></div>
+        <div class="provider-movie-badges">
+          ${movieDetailsMap[provName].map(({ title, tier }) => {
+            const label = tier === 'rent' ? ` <em style="font-size:0.7rem;opacity:0.7">(rent)</em>` : '';
+            return `<span class="movie-badge">${title}${label}</span>`;
+          }).join('')}
+        </div>
+      `;
+      breakdownContent.appendChild(group);
+    });
+  }
+
   breakdownCard.appendChild(breakdownContent);
   container.appendChild(breakdownCard);
 
