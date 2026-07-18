@@ -56,7 +56,7 @@ setInterval(() => {
 // ==========================================
 // Mock Database (Fallback & Dev Mode)
 // ==========================================
-const MOCK_MOVIES = [
+const BASE_MOCK_MOVIES = [
   {
     id: 157336,
     title: "Interstellar",
@@ -328,8 +328,8 @@ const MOCK_PROVIDERS = {
   9: { provider_name: "Amazon Prime Video", logo_path: "/9A1s49tdr34ZBc60nGNnF7N63gP.jpg" },
   15: { provider_name: "Hulu", logo_path: "/db814HG4qnnmZ22Uc8UB46vH4aB.jpg" },
   337: { provider_name: "Disney+", logo_path: "/7rw0EsR9ky7BF4R5fs7PwZgZu7y.jpg" },
-  1899: { provider_name: "Max", logo_path: "/1899.jpg" }, // placeholder Max logo
-  350: { provider_name: "Apple TV+", logo_path: "/350.jpg" }
+  1899: { provider_name: "Max", logo_path: "/fksCUZ9QDWZMUwL2LgMtLckROUN.jpg" },
+  350: { provider_name: "Apple TV+", logo_path: "/4k11wY2Zg95pT0tT8L4G8636B4D.jpg" }
 };
 
 // Map movie ID -> provider list
@@ -359,6 +359,50 @@ const MOCK_MOVIE_PROVIDERS = {
   33157: { flatrate: [MOCK_PROVIDERS[9]] },
   531428: { flatrate: [MOCK_PROVIDERS[15]] }
 };
+
+const MOCK_MOVIES = [];
+
+// Dynamically generate exactly 100 movies with unique titles, genres, languages, and watch providers (FR-4.x mock database expansion)
+(() => {
+  // Push all base high-fidelity movies first
+  MOCK_MOVIES.push(...BASE_MOCK_MOVIES);
+  
+  const adjectives = ["Epic", "Silent", "Secret", "Lost", "Hidden", "Final", "Golden", "Dark", "Deep", "Red", "Blue", "Eternal", "Sacred", "Wild", "Midnight", "Broken", "Shadow", "Forgotten", "Last", "First"];
+  const nouns = ["Journey", "Empire", "Symphony", "Shadow", "Labyrinth", "Warrior", "Legend", "Story", "Horizon", "Kingdom", "Ocean", "Memory", "Dreams", "Knight", "Edge", "Dawn", "Revenge", "Alliance", "Legacy", "Truth"];
+  
+  let currentId = 900000;
+  while (MOCK_MOVIES.length < 100) {
+    const base = BASE_MOCK_MOVIES[Math.floor(Math.random() * BASE_MOCK_MOVIES.length)];
+    const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const noun = nouns[Math.floor(Math.random() * nouns.length)];
+    const newTitle = `${adj} ${noun}`;
+    
+    const clone = {
+      ...base,
+      id: currentId++,
+      title: newTitle,
+      popularity: parseFloat((Math.random() * 50 + 10).toFixed(1)),
+      vote_average: parseFloat((Math.random() * 3 + 6).toFixed(1)),
+      // Randomize languages and genres for full catalog distribution
+      original_language: ['en', 'es', 'fr', 'ja', 'de', 'ko', 'zh', 'it', 'pt', 'ru', 'hi', 'da'][Math.floor(Math.random() * 12)],
+      genre_ids: [
+        [28, 12], [35, 10749], [18, 35], [16, 10751], [878, 28], [53, 9648], [14, 12], [27, 53], [36, 18], [10752, 28]
+      ][Math.floor(Math.random() * 10)]
+    };
+    MOCK_MOVIES.push(clone);
+  }
+
+  // Populate mock providers for all movies to keep dashboard stats fully populated
+  MOCK_MOVIES.forEach(movie => {
+    if (!MOCK_MOVIE_PROVIDERS[movie.id]) {
+      const providerIds = [8, 9, 15, 337, 1899, 350];
+      const numProviders = Math.floor(Math.random() * 3) + 1;
+      const shuffled = [...providerIds].sort(() => 0.5 - Math.random());
+      const selected = shuffled.slice(0, numProviders).map(pid => MOCK_PROVIDERS[pid]);
+      MOCK_MOVIE_PROVIDERS[movie.id] = { flatrate: selected };
+    }
+  });
+})();
 
 
 // ==========================================

@@ -979,6 +979,15 @@ function simulateLocalOptimizationReport() {
     });
   });
   
+  const logoPaths = {
+    "Netflix": "/peURlLhxptfv1QGIHGQwveUsR61.jpg",
+    "Amazon Prime Video": "/9A1s49tdr34ZBc60nGNnF7N63gP.jpg",
+    "Hulu": "/db814HG4qnnmZ22Uc8UB46vH4aB.jpg",
+    "Disney+": "/7rw0EsR9ky7BF4R5fs7PwZgZu7y.jpg",
+    "Max": "/fksCUZ9QDWZMUwL2LgMtLckROUN.jpg",
+    "Apple TV+": "/4k11wY2Zg95pT0tT8L4G8636B4D.jpg"
+  };
+
   const providersList = Object.keys(providers).map(name => {
     const matchCount = providers[name];
     const matchPercentage = Math.round((matchCount / state.likedArray.length) * 100);
@@ -986,6 +995,7 @@ function simulateLocalOptimizationReport() {
       provider_name: name,
       match_count: matchCount,
       match_percentage: matchPercentage,
+      logo_path: logoPaths[name] || null,
       affiliate_link: `https://click.swipeflix.com/redirect?provider=${encodeURIComponent(name.toLowerCase())}`
     };
   }).sort((a,b) => b.match_percentage - a.match_percentage);
@@ -1016,6 +1026,10 @@ function renderOptimizationReport(data) {
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (topProvider.match_percentage / 100) * circumference;
 
+  const logoUrl = topProvider.logo_path 
+    ? `https://image.tmdb.org/t/p/w154${topProvider.logo_path}`
+    : '';
+
   winnerCard.innerHTML = `
     <div class="winner-badge">Optimal Provider</div>
     
@@ -1028,8 +1042,9 @@ function renderOptimizationReport(data) {
       <div class="gauge-text">${topProvider.match_percentage}%</div>
     </div>
     
-    <h3 class="winner-name">${topProvider.provider_name}</h3>
-    <p class="winner-text">
+    ${logoUrl ? `<img class="winner-logo" src="${logoUrl}" alt="${topProvider.provider_name}">` : `<h3 class="winner-name">${topProvider.provider_name}</h3>`}
+    
+    <p class="winner-text" style="margin-top: 12px;">
       Matches <strong>${topProvider.match_percentage}%</strong> (${topProvider.match_count} of ${state.likedArray.length}) of your picks.
     </p>
     
