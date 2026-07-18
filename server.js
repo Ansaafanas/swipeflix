@@ -434,7 +434,7 @@ app.get('*', (req, res) => {
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
     console.log(`===================================================`);
-    console.log(`SwipeFlix Server running at http://localhost:${PORT}`);
+    console.log(`bingbingbinge Server running at http://localhost:${PORT}`);
     console.log(`TMDB API Key: ${process.env.TMDB_API_KEY ? 'Configured ✓' : 'MISSING ✗'}`);
     console.log(`===================================================`);
   });

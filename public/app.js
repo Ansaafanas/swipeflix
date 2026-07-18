@@ -3,7 +3,7 @@ import { identityMatrix, matVecMul, dotProduct, sherman_morrison_update, quadFor
 
 // Global error logging for debugging
 window.addEventListener('error', (e) => {
-  console.error("SwipeFlix Runtime Error Captured: ", e.message, "at", e.filename, ":", e.lineno);
+  console.error("bingbingbinge Runtime Error Captured: ", e.message, "at", e.filename, ":", e.lineno);
   if (typeof showToast === 'function') {
     showToast(`App Error: ${e.message}`, 'warning');
   }

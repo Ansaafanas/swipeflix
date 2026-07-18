@@ -1,7 +1,7 @@
 {
-  "name": "swipeflix",
+  "name": "bingbingbinge",
   "version": "1.0.0",
-  "description": "SwipeFlix - A Tinder-Style Discovery & Streaming Aggregator Platform",
+  "description": "bingbingbinge - A Tinder-Style Discovery & Streaming Aggregator Platform",
   "main": "server.js",
   "type": "module",
   "scripts": {
