@@ -47,43 +47,51 @@ setInterval(() => {
 // Helpers
 // ==========================================
 
-function normalise(value, min, max) {
-  if (max === min) return 0.5;
-  return Math.max(0, Math.min(1, (value - min) / (max - min)));
-}
+const MOVIE_TO_TV_GENRE_MAP = {
+  28: 10759,    // Action -> Action & Adventure
+  12: 10759,    // Adventure -> Action & Adventure
+  878: 10765,   // Sci-Fi -> Sci-Fi & Fantasy
+  14: 10765,    // Fantasy -> Sci-Fi & Fantasy
+  10752: 10768, // War -> War & Politics
+};
 
-/**
- * Score a single item given a genre-weight map.
- * score = Σ genreWeight[g]  +  0.5 × (0.6 × norm_vote + 0.4 × norm_pop)
- */
-function scoreItem(item, genreWeights, normStats) {
-  const genreScore = (item.genre_ids || []).reduce((acc, gid) => {
-    return acc + (genreWeights[gid] || 0);
-  }, 0);
-  const normVote = normalise(item.vote_average || 0, normStats.minVote, normStats.maxVote);
-  const normPop  = normalise(item.popularity   || 0, normStats.minPop,  normStats.maxPop);
-  const qualityBonus = 0.5 * (0.6 * normVote + 0.4 * normPop);
-  return genreScore + qualityBonus;
-}
+const TV_TO_MOVIE_GENRE_MAP = {
+  10759: [28, 12],    // Action & Adventure -> Action, Adventure
+  10765: [878, 14],   // Sci-Fi & Fantasy -> Sci-Fi, Fantasy
+  10768: [10752]      // War & Politics -> War
+};
 
-/**
- * Diversity pass: re-order so no more than 2 consecutive cards share the
- * same primary genre (first element of genre_ids array).
- */
-function diversityPass(items) {
-  const result = [];
-  const pending = [...items];
-  while (pending.length > 0) {
-    const lastTwo = result.slice(-2).map(m => (m.genre_ids || [])[0]);
-    const blocked = (lastTwo.length === 2 && lastTwo[0] === lastTwo[1]) ? lastTwo[0] : null;
-    let chosen = -1;
-    if (blocked !== null) {
-      chosen = pending.findIndex(m => (m.genre_ids || [])[0] !== blocked);
+function translateMovieGenresToTv(genresStr) {
+  if (!genresStr) return '';
+  const separator = genresStr.includes('|') ? '|' : ',';
+  const ids = genresStr.split(separator).map(id => parseInt(id, 10)).filter(Boolean);
+  const tvIds = new Set();
+  ids.forEach(id => {
+    if (MOVIE_TO_TV_GENRE_MAP[id]) {
+      tvIds.add(MOVIE_TO_TV_GENRE_MAP[id]);
+    } else {
+      tvIds.add(id);
     }
-    if (chosen === -1) chosen = 0;
-    result.push(pending.splice(chosen, 1)[0]);
+  });
+  return Array.from(tvIds).join(separator);
+}
+
+function itemMatchesGenres(item, selectedGenreIds) {
+  if (selectedGenreIds.length === 0) return true;
+  const itemGenreIds = item.genre_ids || [];
+  
+  if (item.media_type === 'tv') {
+    return itemGenreIds.some(gid => {
+      if (selectedGenreIds.includes(gid)) return true;
+      const movieEquivs = TV_TO_MOVIE_GENRE_MAP[gid];
+      if (movieEquivs) {
+        return movieEquivs.some(meg => selectedGenreIds.includes(meg));
+      }
+      return false;
+    });
+  } else {
+    return itemGenreIds.some(gid => selectedGenreIds.includes(gid));
   }
-  return result;
 }
 
 /**
@@ -110,48 +118,6 @@ function normaliseTVShow(m) {
     synopsis: m.overview || m.synopsis || ''
   };
 }
-
-/**
- * Known provider link map, including all Hotstar / JioHotstar / Disney+ Hotstar variants.
- */
-const PROVIDER_LINKS = {
-  // Global
-  "netflix":                   "https://www.netflix.com",
-  "amazon prime video":        "https://www.primevideo.com",
-  "prime video":               "https://www.primevideo.com",
-  "hulu":                      "https://www.hulu.com",
-  "disney+":                   "https://www.disneyplus.com",
-  "disney plus":               "https://www.disneyplus.com",
-  "max":                       "https://www.max.com",
-  "hbo max":                   "https://www.max.com",
-  "apple tv+":                 "https://tv.apple.com",
-  "apple tv plus":             "https://tv.apple.com",
-  "peacock":                   "https://www.peacocktv.com",
-  "paramount+":                "https://www.paramountplus.com",
-  "paramount plus":            "https://www.paramountplus.com",
-  // India — Hotstar variants
-  "disney+ hotstar":           "https://www.jiohotstar.com",
-  "hotstar":                   "https://www.jiohotstar.com",
-  "jiohotstar":                "https://www.jiohotstar.com",
-  "jio hotstar":               "https://www.jiohotstar.com",
-  // India — other platforms
-  "zee5":                      "https://www.zee5.com",
-  "sonyliv":                   "https://www.sonyliv.com",
-  "sony liv":                  "https://www.sonyliv.com",
-  "mxplayer":                  "https://www.mxplayer.in",
-  "mx player":                 "https://www.mxplayer.in",
-  "sun nxt":                   "https://www.sunnxt.com",
-  "sunnxt":                    "https://www.sunnxt.com",
-  "aha":                       "https://www.aha.video",
-  "erosnow":                   "https://erosnow.com",
-  "eros now":                  "https://erosnow.com",
-  "jio cinema":                "https://www.jiocinema.com",
-  "jiocinema":                 "https://www.jiocinema.com",
-  "voot":                      "https://www.voot.com",
-  "neestream":                 "https://neestream.com",
-  "manorama max":              "https://www.manoramamax.com",
-  "planet marathi":            "https://planetmarathi.com"
-};
 
 /**
  * Fetch watch providers for a movie or TV show, trying a prioritised region list.
@@ -195,24 +161,12 @@ async function fetchProviders(itemId, regionList, mediaType = 'movie') {
 //   genres      - pipe-separated genre IDs (top-5 positive-weight, coarse OR filter)
 //   userGenres  - pipe-separated genre IDs explicitly selected by the user (strict post-filter)
 //   page        - page number
-//   weights     - full preference vector "genreId:weight,..." for server-side scoring
 app.get('/api/discover', async (req, res) => {
-  const { lang = '', genres = '', userGenres = '', page = 1, weights = '' } = req.query;
+  const { lang = '', genres = '', userGenres = '', page = 1 } = req.query;
   const pageNum = parseInt(page, 10) || 1;
 
   if (!process.env.TMDB_API_KEY) {
     return res.status(503).json({ error: 'TMDB API key not configured.' });
-  }
-
-  // Parse preference weights
-  const genreWeights = {};
-  if (weights) {
-    weights.split(',').forEach(pair => {
-      const [id, w] = pair.split(':');
-      const gid = parseInt(id, 10);
-      const weight = parseFloat(w);
-      if (!isNaN(gid) && !isNaN(weight)) genreWeights[gid] = weight;
-    });
   }
 
   // Parse strict user-selected genre IDs for post-filtering
@@ -223,13 +177,20 @@ app.get('/api/discover', async (req, res) => {
   // Build base TMDB query parameters
   const baseParams = `api_key=${process.env.TMDB_API_KEY}&sort_by=popularity.desc&page=${pageNum}&vote_count.gte=20`;
   const langParam   = lang   ? `&with_original_language=${lang}`  : '';
-  // Use comma (AND) for single genre, pipe (OR) for multiple — ensures Animation only gives Animation
-  const genreParam  = genres
-    ? `&with_genres=${genres.includes('|') ? genres : genres}`
+  
+  // Coarse movie genre filter
+  const genreParamMovie = genres
+    ? `&with_genres=${genres}`
     : '';
 
-  const movieUrl = `https://api.themoviedb.org/3/discover/movie?${baseParams}${langParam}${genreParam}`;
-  const tvUrl    = `https://api.themoviedb.org/3/discover/tv?${baseParams}${langParam}${genreParam}`;
+  // Coarse TV genre filter (translated from movie genre IDs)
+  const genresTv = translateMovieGenresToTv(genres);
+  const genreParamTv = genresTv
+    ? `&with_genres=${genresTv}`
+    : '';
+
+  const movieUrl = `https://api.themoviedb.org/3/discover/movie?${baseParams}${langParam}${genreParamMovie}`;
+  const tvUrl    = `https://api.themoviedb.org/3/discover/tv?${baseParams}${langParam}${genreParamTv}`;
 
   const cacheKey = `discover:${lang}:${genres}:${pageNum}`;
 
@@ -252,30 +213,9 @@ app.get('/api/discover', async (req, res) => {
     const tvShows  = (tvData.results   || []).map(normaliseTVShow);
     let combined   = [...movies, ...tvShows];
 
-    // Strict genre post-filter: if the user explicitly selected genres,
-    // only keep items that include at least one of those genres.
+    // Strict genre post-filter using itemMatchesGenres helper
     if (userGenreIds.length > 0) {
-      combined = combined.filter(item =>
-        (item.genre_ids || []).some(gid => userGenreIds.includes(gid))
-      );
-    }
-
-    // Server-side scoring
-    if (Object.keys(genreWeights).length > 0 && combined.length > 0) {
-      const votes = combined.map(m => m.vote_average || 0);
-      const pops  = combined.map(m => m.popularity   || 0);
-      const normStats = {
-        minVote: Math.min(...votes), maxVote: Math.max(...votes),
-        minPop:  Math.min(...pops),  maxPop:  Math.max(...pops)
-      };
-      combined = combined
-        .map(m => ({ ...m, _score: scoreItem(m, genreWeights, normStats) }))
-        .sort((a, b) => b._score - a._score);
-      combined = diversityPass(combined);
-      combined = combined.map(({ _score, ...rest }) => rest);
-    } else {
-      // No weights yet — still apply diversity pass on the merged list
-      combined = diversityPass(combined);
+      combined = combined.filter(item => itemMatchesGenres(item, userGenreIds));
     }
 
     // Use the higher of the two total_pages as the pagination ceiling
@@ -328,10 +268,50 @@ app.get('/api/providers/:itemId', async (req, res) => {
   }
 });
 
+const PROVIDER_LINKS = {
+  // Global
+  "netflix":                   "https://www.netflix.com",
+  "amazon prime video":        "https://www.primevideo.com",
+  "prime video":               "https://www.primevideo.com",
+  "hulu":                      "https://www.hulu.com",
+  "disney+":                   "https://www.disneyplus.com",
+  "disney plus":               "https://www.disneyplus.com",
+  "max":                       "https://www.max.com",
+  "hbo max":                   "https://www.max.com",
+  "apple tv+":                 "https://tv.apple.com",
+  "apple tv plus":             "https://tv.apple.com",
+  "peacock":                   "https://www.peacocktv.com",
+  "paramount+":                "https://www.paramountplus.com",
+  "paramount plus":            "https://www.paramountplus.com",
+  // India — Hotstar variants
+  "disney+ hotstar":           "https://www.jiohotstar.com",
+  "hotstar":                   "https://www.jiohotstar.com",
+  "jiohotstar":                "https://www.jiohotstar.com",
+  "jio hotstar":               "https://www.jiohotstar.com",
+  // India — other platforms
+  "zee5":                      "https://www.zee5.com",
+  "sonyliv":                   "https://www.sonyliv.com",
+  "sony liv":                  "https://www.sonyliv.com",
+  "mxplayer":                  "https://www.mxplayer.in",
+  "mx player":                 "https://www.mxplayer.in",
+  "sun nxt":                   "https://www.sunnxt.com",
+  "sunnxt":                    "https://www.sunnxt.com",
+  "aha":                       "https://www.aha.video",
+  "erosnow":                   "https://erosnow.com",
+  "eros now":                  "https://erosnow.com",
+  "jio cinema":                "https://www.jiocinema.com",
+  "jiocinema":                 "https://www.jiocinema.com",
+  "voot":                      "https://www.voot.com",
+  "neestream":                 "https://neestream.com",
+  "manorama max":              "https://www.manoramamax.com",
+  "planet marathi":            "https://planetmarathi.com"
+};
+
 // POST /api/optimize
 // Body: { movieIds: [{ id, mediaType }] | [id], region }
 app.post('/api/optimize', async (req, res) => {
   let { movieIds = [], region = 'US' } = req.body;
+
 
   if (movieIds.length === 0) {
     return res.json({ providers: [], totalLikedWithProviderData: 0, perMovie: [] });

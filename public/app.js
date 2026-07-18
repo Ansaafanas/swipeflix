@@ -1,3 +1,6 @@
+import { FEATURE_DIM, buildFeatureVector, MOVIE_GENRES_IDS } from './features.js';
+import { identityMatrix, matVecMul, dotProduct, sherman_morrison_update, quadForm, vecAdd, vecScale } from './linalg.js';
+
 // Global error logging for debugging
 window.addEventListener('error', (e) => {
   console.error("SwipeFlix Runtime Error Captured: ", e.message, "at", e.filename, ":", e.lineno);
@@ -103,6 +106,18 @@ const AVAILABLE_LANGUAGES = [
 const FEATURED_LANGUAGES = ['en', 'es', 'fr', 'ja', 'de'];
 const FEATURED_GENRES = [28, 35, 18, 53, 10749]; // Action, Comedy, Drama, Thriller, Romance
 
+const ALL_GENRES_LOOKUP = [
+  ...MOVIE_GENRES,
+  { id: 10759, name: "Action & Adventure" },
+  { id: 10762, name: "Kids" },
+  { id: 10763, name: "News" },
+  { id: 10764, name: "Reality" },
+  { id: 10765, name: "Sci-Fi & Fantasy" },
+  { id: 10766, name: "Soap" },
+  { id: 10767, name: "Talk" },
+  { id: 10768, name: "War & Politics" }
+];
+
 // ==========================================
 // APPLICATION STATE
 // ==========================================
@@ -112,7 +127,7 @@ let state = {
   viewStateStack: [],            // Ephemeral buffer: 10-15 cards
   discardList: [],               // Swiped left IDs
   likedArray: [],                // Swiped right movie objects
-  preferenceVector: new Map(),      // genreId -> weight (float)
+  banditModel: null,             // LinUCB model state
   currentPage: 1,
   totalPages: 1,
   isFetching: false,
@@ -198,7 +213,7 @@ function loadPersistedPreferences() {
     state.userSelectedLanguages = savedLangs ? JSON.parse(savedLangs) : [];
     state.userSelectedGenreIds = savedGenres ? JSON.parse(savedGenres) : [];
 
-    initPreferenceVector();
+    initBanditModel();
     
     // Jump straight to swiping
     transitionToScreen(swipeScreen);
@@ -358,13 +373,35 @@ function confirmSearchSelection() {
   }
 }
 
-// Initialize Preference Vector based on Onboarding selection (FR-4.x)
-function initPreferenceVector() {
-  state.preferenceVector.clear();
-  MOVIE_GENRES.forEach(g => {
-    // Set onboarding favorites with weight 1.0, others 0.0
-    const initialWeight = state.userSelectedGenreIds.includes(g.id) ? 1.0 : 0.0;
-    state.preferenceVector.set(g.id, initialWeight);
+// Initialize LinUCB Bandit Model based on Onboarding selection (Onboarding virtual-swipe cold-start)
+function initBanditModel() {
+  state.banditModel = {
+    Ainv: identityMatrix(FEATURE_DIM),
+    b: new Array(FEATURE_DIM).fill(0),
+    alpha: 0.6
+  };
+
+  const context = {
+    userSelectedLanguages: state.userSelectedLanguages,
+    minPop: 0,
+    maxPop: 100
+  };
+
+  state.userSelectedGenreIds.forEach(genreId => {
+    // Run update twice per selected genre to seed theta strongly
+    for (let k = 0; k < 2; k++) {
+      const fakeItem = {
+        genre_ids: [genreId],
+        media_type: 'movie',
+        release_date: '2024-01-01',
+        original_language: state.userSelectedLanguages[0] || 'en',
+        vote_average: 7.5,
+        popularity: 50.0
+      };
+      const x = buildFeatureVector(fakeItem, context);
+      state.banditModel.Ainv = sherman_morrison_update(state.banditModel.Ainv, x);
+      state.banditModel.b = vecAdd(state.banditModel.b, vecScale(x, 1.0)); // reward = 1.0
+    }
   });
 }
 
@@ -407,7 +444,7 @@ async function startSession() {
   
   likesCount.textContent = '0';
   btnUndo.disabled = true;
-  initPreferenceVector();
+  initBanditModel();
   
   renderStackLoading();
   await hydrateBuffer();
@@ -470,17 +507,30 @@ function setupPullToRefresh() {
 }
 
 // Refresh stack without wiping likes or discards.
-// Injects one exploratory genre at a low weight (0.3) so real signal is not overwritten.
+// Injects one exploratory genre at a low exploratory weight (0.3) via a virtual update.
 window.refreshStack = async function() {
   renderStackLoading();
   state.viewStateStack = [];
 
-  // Pick a genre not yet in the preference vector (or with near-zero weight) for gentle exploration
-  const availableGenres = MOVIE_GENRES.filter(g => (state.preferenceVector.get(g.id) || 0) < 0.2);
+  const availableGenres = MOVIE_GENRES.filter(g => !state.userSelectedGenreIds.includes(g.id));
   if (availableGenres.length > 0) {
     const randomGenre = availableGenres[Math.floor(Math.random() * availableGenres.length)];
-    // Use a low exploratory weight so it influences ranking without erasing real preferences
-    state.preferenceVector.set(randomGenre.id, 0.3);
+    const context = {
+      userSelectedLanguages: state.userSelectedLanguages,
+      minPop: 0,
+      maxPop: 100
+    };
+    const fakeItem = {
+      genre_ids: [randomGenre.id],
+      media_type: 'movie',
+      release_date: '2024-01-01',
+      original_language: state.userSelectedLanguages[0] || 'en',
+      vote_average: 7.0,
+      popularity: 40.0
+    };
+    const x = buildFeatureVector(fakeItem, context);
+    state.banditModel.Ainv = sherman_morrison_update(state.banditModel.Ainv, x);
+    state.banditModel.b = vecAdd(state.banditModel.b, vecScale(x, 0.3));
   }
 
   // Loop page back to 1 if we've swiped through all pages
@@ -496,11 +546,16 @@ async function hydrateBuffer(attempts = 1) {
   if (state.isFetching) return;
   state.isFetching = true;
 
-  // --- Coarse TMDB genre filter: top 5 genres with positive weight ---
+  // --- Compute current theta to find top coarse genres ---
+  const theta = matVecMul(state.banditModel.Ainv, state.banditModel.b);
   let coarseGenres = [];
-  state.preferenceVector.forEach((weight, id) => {
-    if (weight > 0) coarseGenres.push({ id, weight });
-  });
+  for (let i = 0; i < MOVIE_GENRES_IDS.length; i++) {
+    const gid = MOVIE_GENRES_IDS[i];
+    const weight = theta[i];
+    if (weight > 0) {
+      coarseGenres.push({ id: gid, weight });
+    }
+  }
   coarseGenres.sort((a, b) => b.weight - a.weight);
   const topGenreIds = coarseGenres.slice(0, 5).map(g => g.id);
 
@@ -509,18 +564,11 @@ async function hydrateBuffer(attempts = 1) {
   const genresQuery = genreFilter.join('|');
   const langQuery   = state.userSelectedLanguages.join('|');
 
-  // --- Build full weights param so server can score ---
-  const weightPairs = [];
-  state.preferenceVector.forEach((weight, id) => {
-    if (weight !== 0) weightPairs.push(`${id}:${weight.toFixed(3)}`);
-  });
-  const weightsQuery = weightPairs.join(',');
-
-  // --- Strict genre post-filter: user's explicitly selected genres ---
+  // Strict user genre selections
   const userGenresQuery = state.userSelectedGenreIds.join('|');
 
   try {
-    const url = `/api/discover?lang=${langQuery}&genres=${genresQuery}&userGenres=${userGenresQuery}&page=${state.currentPage}&weights=${encodeURIComponent(weightsQuery)}`;
+    const url = `/api/discover?lang=${langQuery}&genres=${genresQuery}&userGenres=${userGenresQuery}&page=${state.currentPage}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error('API fetch failed');
 
@@ -528,8 +576,34 @@ async function hydrateBuffer(attempts = 1) {
 
     if (data.results && data.results.length > 0) {
       const swipedIds = new Set([...state.discardList, ...state.likedArray.map(m => m.id)]);
-      const newMovies = data.results.filter(movie => !swipedIds.has(movie.id));
-      state.viewStateStack.push(...newMovies);
+      let newMovies = data.results.filter(movie => !swipedIds.has(movie.id));
+
+      if (newMovies.length > 0) {
+        // --- Client-side LinUCB Scoring ---
+        const popValues = newMovies.map(m => m.popularity || 0);
+        const context = {
+          userSelectedLanguages: state.userSelectedLanguages,
+          minPop: Math.min(...popValues, 0),
+          maxPop: Math.max(...popValues, 100)
+        };
+
+        newMovies = newMovies.map(item => {
+          const x = buildFeatureVector(item, context);
+          const exploitScore = dotProduct(theta, x);
+          const exploreBonus = state.banditModel.alpha * Math.sqrt(quadForm(x, state.banditModel.Ainv));
+          const finalScore = exploitScore + exploreBonus;
+          return { ...item, _score: finalScore };
+        });
+
+        // Sort descending by finalScore
+        newMovies.sort((a, b) => b._score - a._score);
+
+        // Strip internal score field
+        newMovies = newMovies.map(({ _score, ...rest }) => rest);
+
+        state.viewStateStack.push(...newMovies);
+      }
+      
       state.totalPages = data.total_pages;
       state.currentPage++;
     }
@@ -834,17 +908,22 @@ function commitSwipe(direction) {
 
   const nextCard = card.previousElementSibling;
 
+  // Capture LinUCB state snapshot before updating
+  const banditSnapshot = {
+    Ainv: JSON.parse(JSON.stringify(state.banditModel.Ainv)),
+    b: [...state.banditModel.b]
+  };
+
   if (direction === 'right') {
     card.className = 'movie-card swipe-out-right';
     
-    // Adjust recommendation weight (CBF)
-    adjustPreferenceVector(movie.genre_ids, 0.5);
+    updateLinUCBModel(movie, 1.0);
     
     state.likedArray.push(movie);
     state.viewStateStack.shift();
     
     // History push (for UNDO)
-    state.undoStack.push({ action: 'like', movie });
+    state.undoStack.push({ action: 'like', movie, banditSnapshot });
     
     likesCount.textContent = state.likedArray.length;
     btnUndo.disabled = false;
@@ -863,14 +942,13 @@ function commitSwipe(direction) {
   } else if (direction === 'left') {
     card.className = 'movie-card swipe-out-left';
     
-    // Adjust recommendation dampening
-    adjustPreferenceVector(movie.genre_ids, -0.3);
+    updateLinUCBModel(movie, 0.0);
     
     state.discardList.push(movie.id);
     state.viewStateStack.shift();
     
     // History push
-    state.undoStack.push({ action: 'discard', movie });
+    state.undoStack.push({ action: 'discard', movie, banditSnapshot });
     btnUndo.disabled = false;
     
     if (nextCard) {
@@ -886,22 +964,31 @@ function commitSwipe(direction) {
   }
 }
 
-// Client-side CBF tuning with recency decay
-function adjustPreferenceVector(genreIds, delta) {
-  if (!genreIds) return;
-
-  // Recency decay: reduce the entire vector by 0.97× before applying new delta
-  // This makes the most recent ~10–15 swipes matter more than early ones
-  state.preferenceVector.forEach((weight, id) => {
-    state.preferenceVector.set(id, weight * 0.97);
+// Client-side LinUCB Model Update
+function updateLinUCBModel(movie, reward) {
+  const popValues = state.viewStateStack.map(m => m.popularity || 0);
+  const context = {
+    userSelectedLanguages: state.userSelectedLanguages,
+    minPop: Math.min(...popValues, 0),
+    maxPop: Math.max(...popValues, 100)
+  };
+  const x = buildFeatureVector(movie, context);
+  
+  // Sherman-Morrison update of Ainv
+  state.banditModel.Ainv = sherman_morrison_update(state.banditModel.Ainv, x);
+  
+  // Update b
+  state.banditModel.b = vecAdd(state.banditModel.b, vecScale(x, reward));
+  
+  // Log learned weights (theta) to console for development verification
+  const theta = matVecMul(state.banditModel.Ainv, state.banditModel.b);
+  console.log("LinUCB Updated Theta:", theta);
+  const genreWeights = MOVIE_GENRES_IDS.map((gid, idx) => {
+    const genreObj = MOVIE_GENRES.find(g => g.id === gid);
+    return { name: genreObj ? genreObj.name : gid, weight: theta[idx] };
   });
-
-  // Apply delta with widened negative clamp (-2.0) so repeated discards have real effect
-  genreIds.forEach(id => {
-    const currentWeight = state.preferenceVector.get(id) || 0.0;
-    const newWeight = Math.max(-2.0, Math.min(3.0, currentWeight + delta));
-    state.preferenceVector.set(id, newWeight);
-  });
+  genreWeights.sort((a, b) => b.weight - a.weight);
+  console.log("LinUCB Top Learned Genres:", genreWeights.slice(0, 5));
 }
 
 // Check if stack count falls below 4
@@ -921,10 +1008,14 @@ function undoLastSwipe() {
   if (lastState.action === 'like') {
     state.likedArray = state.likedArray.filter(m => m.id !== movie.id);
     likesCount.textContent = state.likedArray.length;
-    adjustPreferenceVector(movie.genre_ids, -0.5);
   } else if (lastState.action === 'discard') {
     state.discardList = state.discardList.filter(id => id !== movie.id);
-    adjustPreferenceVector(movie.genre_ids, 0.3);
+  }
+
+  // Restore model state snapshot
+  if (lastState.banditSnapshot) {
+    state.banditModel.Ainv = lastState.banditSnapshot.Ainv;
+    state.banditModel.b = lastState.banditSnapshot.b;
   }
   
   state.undoAnimating = { direction: lastState.action === 'like' ? 'right' : 'left' };
@@ -952,7 +1043,7 @@ function openMovieDetails(movie) {
   // Render genre badges
   detailGenres.innerHTML = '';
   (movie.genre_ids || []).forEach(gid => {
-    const genre = MOVIE_GENRES.find(g => g.id === gid);
+    const genre = ALL_GENRES_LOOKUP.find(g => g.id === gid);
     if (genre) {
       const tag = document.createElement('span');
       tag.className = 'genre-tag';
@@ -1257,7 +1348,7 @@ function setupEventListeners() {
     localStorage.setItem('swipeflix_langs', JSON.stringify(state.userSelectedLanguages));
     localStorage.setItem('swipeflix_genres', JSON.stringify(state.userSelectedGenreIds));
     
-    initPreferenceVector();
+    initBanditModel();
     transitionToScreen(swipeScreen);
     startSession();
   });
