@@ -128,6 +128,7 @@ let state = {
   discardList: [],               // Swiped left IDs
   likedArray: [],                // Swiped right movie objects
   banditModel: null,             // LinUCB model state
+  contentType: 'both',           // 'both' | 'movie' | 'tv'
   currentPage: 1,
   totalPages: 1,
   isFetching: false,
@@ -195,6 +196,7 @@ const discardOverlay = document.querySelector('.discard-overlay');
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
   loadPersistedPreferences();
+  syncContentTypeUI();
   // If preferences weren't loaded, skip onboard loading (it loads by default since onboarding-screen is active)
   if (!swipeScreen.classList.contains('active')) {
     renderFeaturedGrid(onboardingLangGrid, 'language', false);
@@ -208,6 +210,9 @@ document.addEventListener('DOMContentLoaded', () => {
 function loadPersistedPreferences() {
   const savedLangs = localStorage.getItem('swipeflix_langs');
   const savedGenres = localStorage.getItem('swipeflix_genres');
+  const savedType = localStorage.getItem('swipeflix_content_type');
+
+  state.contentType = savedType || 'both';
 
   if (savedLangs || savedGenres) {
     state.userSelectedLanguages = savedLangs ? JSON.parse(savedLangs) : [];
@@ -370,6 +375,25 @@ function confirmSearchSelection() {
     } else {
       renderFeaturedGrid(onboardingGenresGrid, 'genre', false);
     }
+  }
+}
+
+// Synchronize content type selector buttons in UI
+function syncContentTypeUI() {
+  const type = state.contentType || 'both';
+  
+  const onboardingSelector = document.getElementById('onboarding-type-selector');
+  if (onboardingSelector) {
+    onboardingSelector.querySelectorAll('button').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.value === type);
+    });
+  }
+  
+  const settingsSelector = document.getElementById('settings-type-selector');
+  if (settingsSelector) {
+    settingsSelector.querySelectorAll('button').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.value === type);
+    });
   }
 }
 
@@ -568,7 +592,7 @@ async function hydrateBuffer(attempts = 1) {
   const userGenresQuery = state.userSelectedGenreIds.join('|');
 
   try {
-    const url = `/api/discover?lang=${langQuery}&genres=${genresQuery}&userGenres=${userGenresQuery}&page=${state.currentPage}`;
+    const url = `/api/discover?lang=${langQuery}&genres=${genresQuery}&userGenres=${userGenresQuery}&page=${state.currentPage}&contentType=${state.contentType}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error('API fetch failed');
 
@@ -1331,6 +1355,7 @@ function saveSettings() {
   // Save preferences
   localStorage.setItem('swipeflix_langs', JSON.stringify(state.userSelectedLanguages));
   localStorage.setItem('swipeflix_genres', JSON.stringify(state.userSelectedGenreIds));
+  localStorage.setItem('swipeflix_content_type', state.contentType);
   
   closeSettingsModal();
   
@@ -1347,14 +1372,41 @@ function setupEventListeners() {
   btnStartSwiping.addEventListener('click', () => {
     localStorage.setItem('swipeflix_langs', JSON.stringify(state.userSelectedLanguages));
     localStorage.setItem('swipeflix_genres', JSON.stringify(state.userSelectedGenreIds));
+    localStorage.setItem('swipeflix_content_type', state.contentType);
     
     initBanditModel();
     transitionToScreen(swipeScreen);
     startSession();
   });
   
+  // Content Type selector click handlers
+  const onboardingTypeSelector = document.getElementById('onboarding-type-selector');
+  if (onboardingTypeSelector) {
+    onboardingTypeSelector.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (btn) {
+        state.contentType = btn.dataset.value;
+        syncContentTypeUI();
+      }
+    });
+  }
+
+  const settingsTypeSelector = document.getElementById('settings-type-selector');
+  if (settingsTypeSelector) {
+    settingsTypeSelector.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (btn) {
+        state.contentType = btn.dataset.value;
+        syncContentTypeUI();
+      }
+    });
+  }
+
   // Settings modal triggers
-  btnOpenSettings.addEventListener('click', openSettingsModal);
+  btnOpenSettings.addEventListener('click', () => {
+    syncContentTypeUI();
+    openSettingsModal();
+  });
   btnCloseSettings.addEventListener('click', closeSettingsModal);
   btnSaveSettings.addEventListener('click', saveSettings);
   

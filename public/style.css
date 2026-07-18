@@ -173,6 +173,20 @@ body {
   gap: 10px;
 }
 
+.content-type-selector {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.content-type-selector .preference-btn {
+  flex: 1;
+  justify-content: center;
+  text-align: center;
+  padding: 12px 10px;
+}
+
+
 .preference-btn {
   background: #FFFFFF;
   border: 1px solid var(--border-light);

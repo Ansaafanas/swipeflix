@@ -161,8 +161,9 @@ async function fetchProviders(itemId, regionList, mediaType = 'movie') {
 //   genres      - pipe-separated genre IDs (top-5 positive-weight, coarse OR filter)
 //   userGenres  - pipe-separated genre IDs explicitly selected by the user (strict post-filter)
 //   page        - page number
+//   contentType - 'both' | 'movie' | 'tv'
 app.get('/api/discover', async (req, res) => {
-  const { lang = '', genres = '', userGenres = '', page = 1 } = req.query;
+  const { lang = '', genres = '', userGenres = '', page = 1, contentType = 'both' } = req.query;
   const pageNum = parseInt(page, 10) || 1;
 
   if (!process.env.TMDB_API_KEY) {
@@ -195,34 +196,49 @@ app.get('/api/discover', async (req, res) => {
   const cacheKey = `discover:${lang}:${genres}:${pageNum}`;
 
   try {
-    // Fetch movies and TV shows in parallel
-    const [movieData, tvData] = await Promise.all([
-      getOrSetCache(`movie:${cacheKey}`, async () => {
+    let combined = [];
+    let totalPages = 1;
+
+    if (contentType === 'movie') {
+      const movieData = await getOrSetCache(`movie:${cacheKey}`, async () => {
         const r = await fetch(movieUrl);
         if (!r.ok) throw new Error(`TMDB movie error ${r.status}`);
         return r.json();
-      }, 15 * 60 * 1000),
-      getOrSetCache(`tv:${cacheKey}`, async () => {
+      }, 15 * 60 * 1000);
+      combined = (movieData.results || []).map(normaliseMovie);
+      totalPages = movieData.total_pages || 1;
+    } else if (contentType === 'tv') {
+      const tvData = await getOrSetCache(`tv:${cacheKey}`, async () => {
         const r = await fetch(tvUrl);
         if (!r.ok) throw new Error(`TMDB TV error ${r.status}`);
         return r.json();
-      }, 15 * 60 * 1000)
-    ]);
-
-    const movies   = (movieData.results || []).map(normaliseMovie);
-    const tvShows  = (tvData.results   || []).map(normaliseTVShow);
-    let combined   = [...movies, ...tvShows];
+      }, 15 * 60 * 1000);
+      combined = (tvData.results || []).map(normaliseTVShow);
+      totalPages = tvData.total_pages || 1;
+    } else {
+      // both
+      const [movieData, tvData] = await Promise.all([
+        getOrSetCache(`movie:${cacheKey}`, async () => {
+          const r = await fetch(movieUrl);
+          if (!r.ok) throw new Error(`TMDB movie error ${r.status}`);
+          return r.json();
+        }, 15 * 60 * 1000),
+        getOrSetCache(`tv:${cacheKey}`, async () => {
+          const r = await fetch(tvUrl);
+          if (!r.ok) throw new Error(`TMDB TV error ${r.status}`);
+          return r.json();
+        }, 15 * 60 * 1000)
+      ]);
+      const movies   = (movieData.results || []).map(normaliseMovie);
+      const tvShows  = (tvData.results   || []).map(normaliseTVShow);
+      combined   = [...movies, ...tvShows];
+      totalPages = Math.max(movieData.total_pages || 1, tvData.total_pages || 1);
+    }
 
     // Strict genre post-filter using itemMatchesGenres helper
     if (userGenreIds.length > 0) {
       combined = combined.filter(item => itemMatchesGenres(item, userGenreIds));
     }
-
-    // Use the higher of the two total_pages as the pagination ceiling
-    const totalPages = Math.max(
-      movieData.total_pages || 1,
-      tvData.total_pages   || 1
-    );
 
     return res.json({
       results: combined,
