@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SwipeFlix - Swipe Movies, Save Money</title>
+  <meta name="description" content="Discover movies with a Tinder-style swiping interface and get a cost-optimized streaming report tailored to your likes.">
+  
+  <!-- Fonts: Outfit (headings) & Inter (UI/Body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Main Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="app-container">
+    
+    <!-- ==========================================
+         ONBOARDING SCREEN
+         ========================================== -->
+    <section id="onboarding-screen" class="screen active">
+      <div class="brand-header">
+        <h1 class="logo-text">Swipe<span>Flix</span></h1>
+        <p class="tagline">Your personal movie curator & cost optimizer</p>
+      </div>
+
+      <div class="onboarding-card glass-panel">
+        <div class="preference-section">
+          <div class="preference-group-header">Language</div>
+          <div class="preferences-grid-6" id="onboarding-lang-grid">
+            <!-- Dynamically populated: 5 languages + More tab -->
+          </div>
+        </div>
+
+        <div class="preference-section">
+          <div class="preference-group-header">Genres</div>
+          <div class="preferences-grid-6" id="onboarding-genres-grid">
+            <!-- Dynamically populated: 6 genres + More tab -->
+          </div>
+        </div>
+
+        <button id="btn-start-swiping" class="btn-primary">
+          Start Swiping <span class="arrow-right">→</span>
+        </button>
+
+        <div class="tmdb-attribution">
+          <img src="tmdb_logo_long.svg" alt="TMDB Logo" class="tmdb-attribution-logo">
+          <span>This product uses the TMDB API but is not endorsed or certified by TMDB.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         SWIPE SCREEN
+         ========================================== -->
+    <section id="swipe-screen" class="screen">
+      <!-- Minimalist Header (Navigation & secondary actions) -->
+      <header class="swipe-header">
+        <button id="btn-open-settings" class="header-btn" aria-label="Settings">
+          <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </button>
+        
+        <div class="logo-small">Swipe<span>Flix</span></div>
+        
+        <button id="btn-end" class="header-btn btn-finish-text" aria-label="Finish Session">
+          Finish
+        </button>
+      </header>
+
+      <!-- Main Deck Workspace -->
+      <div class="deck-container">
+        <div id="card-stack" class="card-stack">
+          <!-- Cards injected dynamically via app.js -->
+          <div class="deck-loader">
+            <div class="spinner"></div>
+            <p>Loading card deck...</p>
+          </div>
+        </div>
+        
+        <!-- Status indicator elements (likes count) -->
+        <div class="likes-badge-floating" id="likes-badge">
+          <span class="heart-pulse">❤️</span> <span id="likes-count">0</span>
+        </div>
+      </div>
+
+      <!-- Controls Panel (Nope & Like only, matching the video) -->
+      <div class="controls-panel">
+        <button id="btn-discard" class="control-btn btn-discard" aria-label="Discard">
+          <svg viewBox="0 0 24 24" width="26" height="26" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+
+        <button id="btn-undo" class="control-btn btn-undo" aria-label="Undo last swipe" disabled>
+          <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path></svg>
+        </button>
+        
+        <button id="btn-like" class="control-btn btn-like" aria-label="Like">
+          <svg viewBox="0 0 24 24" width="26" height="26" stroke="currentColor" stroke-width="2.5" fill="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg>
+        </button>
+      </div>
+
+      <!-- Slide-up Movie Details Panel -->
+      <div id="details-panel" class="details-panel">
+        <div class="panel-handle"></div>
+        <button id="btn-close-details" class="close-details-btn">&times;</button>
+        
+        <div class="panel-scroll-content">
+          <div class="detail-header-group">
+            <h3 id="detail-title" class="detail-title">Movie Title</h3>
+            <div class="detail-meta">
+              <span id="detail-year" class="meta-tag">2026</span>
+              <span id="detail-rating" class="meta-tag rating-tag">⭐ 8.5</span>
+              <span id="detail-lang" class="meta-tag">EN</span>
+            </div>
+          </div>
+          
+          <div class="detail-genres" id="detail-genres">
+            <!-- Genres list -->
+          </div>
+          
+          <div class="detail-body">
+            <h4>Synopsis</h4>
+            <p id="detail-synopsis">Movie synopsis...</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         OPTIMIZATION DASHBOARD SCREEN
+         ========================================== -->
+    <section id="dashboard-screen" class="screen">
+      <div class="dashboard-header">
+        <h1 class="logo-text">Swipe<span>Flix</span></h1>
+      </div>
+
+      <div class="dashboard-content" id="dashboard-content">
+        <!-- Rendered dynamically via app.js -->
+        <div class="dashboard-loader">
+          <div class="spinner"></div>
+          <p>Analyzing watched provider matrices...</p>
+        </div>
+      </div>
+
+      <div class="tmdb-attribution">
+        <img src="tmdb_logo_long.svg" alt="TMDB Logo" class="tmdb-attribution-logo">
+        <span>This product uses the TMDB API but is not endorsed or certified by TMDB.</span>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Global Toast Alerts -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Settings Modal (Preferences overlay) -->
+  <div id="settings-modal" class="modal">
+    <div class="modal-content glass-panel">
+      <button id="btn-close-settings" class="modal-close">&times;</button>
+      <h2>Revise Preferences</h2>
+      
+      <div class="preference-section">
+        <div class="preference-group-header">Language</div>
+        <div class="preferences-grid-6" id="settings-lang-grid">
+          <!-- Dynamically populated: 5 languages + More tab -->
+        </div>
+      </div>
+
+      <div class="preference-section">
+        <div class="preference-group-header">Genres</div>
+        <div class="preferences-grid-6" id="settings-genres-grid">
+          <!-- Dynamically populated: 6 genres + More tab -->
+        </div>
+      </div>
+
+      <button id="btn-save-settings" class="btn-primary">Save & Restart Session</button>
+
+      <div class="tmdb-attribution">
+        <img src="tmdb_logo_long.svg" alt="TMDB Logo" class="tmdb-attribution-logo">
+        <span>This product uses the TMDB API but is not endorsed or certified by TMDB.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search Modal for 'More' Selection -->
+  <div id="search-modal" class="modal">
+    <div class="modal-content glass-panel search-modal-content">
+      <button id="btn-close-search" class="modal-close">&times;</button>
+      <h2 id="search-modal-title">Select Languages</h2>
+      <div class="search-input-wrapper">
+        <input type="text" id="search-input" placeholder="Search..." autocomplete="off">
+      </div>
+      <div class="search-results-list" id="search-results-list">
+        <!-- Items populated dynamically -->
+      </div>
+      <button id="btn-save-search" class="btn-primary">Confirm Selection</button>
+    </div>
+  </div>
+
+  <!-- Script Entry Point -->
+  <script src="app.js"></script>
+</body>
+</html>
