@@ -469,7 +469,7 @@ app.get('/api/discover', async (req, res) => {
     // Construct TMDB URL dynamically
     let url = `https://api.themoviedb.org/3/discover/movie?api_key=${process.env.TMDB_API_KEY}&sort_by=${randomSort}&page=${pageNum}`;
     if (lang) {
-      url += `&with_original_languages=${lang}`;
+      url += `&with_original_language=${lang}`;
     }
     if (genres) {
       url += `&with_genres=${genres}`;
