@@ -894,8 +894,13 @@ function setupCardGestures(card) {
         return;
       }
       
-      // Threshold validation: commit vs. snap-back (Swipe Up is removed)
-      if (deltaX > 120) {
+      // Threshold validation: swipe up to refresh, commit swipes vs. snap-back
+      if (deltaY < -120 && Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
+        card.className = 'movie-card swipe-out-up';
+        setTimeout(() => {
+          window.location.reload();
+        }, 300);
+      } else if (deltaX > 120) {
         commitSwipe('right');
       } else if (deltaX < -120) {
         commitSwipe('left');
@@ -1368,6 +1373,14 @@ function saveSettings() {
 // EVENT LISTENERS REGISTER
 // ==========================================
 function setupEventListeners() {
+  // Logo click to reload/refresh the page
+  document.querySelectorAll('.logo-text, .logo-small').forEach(el => {
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => {
+      window.location.reload();
+    });
+  });
+
   // Start Swiping CTA
   btnStartSwiping.addEventListener('click', () => {
     localStorage.setItem('swipeflix_langs', JSON.stringify(state.userSelectedLanguages));
