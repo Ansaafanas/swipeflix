@@ -1,3 +1,11 @@
+// Global error logging for debugging
+window.addEventListener('error', (e) => {
+  console.error("SwipeFlix Runtime Error Captured: ", e.message, "at", e.filename, ":", e.lineno);
+  if (typeof showToast === 'function') {
+    showToast(`App Error: ${e.message}`, 'warning');
+  }
+});
+
 // ==========================================
 // CONFIGURATION (EMOJIS STRIPPED)
 // ==========================================
@@ -594,13 +602,13 @@ function createCardElement(movie, isTopCard) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </div>
 
-      <img class="card-poster" src="${posterUrl}" alt="${movie.title}" loading="lazy">
+      <img class="card-poster" src="${posterUrl}" alt="${movie.title}" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=500&auto=format&fit=crop';" loading="lazy">
       <div class="card-overlay">
         <h2 class="card-title">${movie.title}</h2>
         <div class="card-meta">
           <span class="meta-tag">${releaseYear}</span>
           <span class="meta-tag rating-tag">⭐ ${rating}</span>
-          <span class="meta-tag">${movie.original_language.toUpperCase()}</span>
+          <span class="meta-tag">${(movie.original_language || 'EN').toUpperCase()}</span>
         </div>
         <div class="tap-hint">Tap for details</div>
       </div>
@@ -692,76 +700,68 @@ function setupCardGestures(card) {
     }
   });
   
-  card.addEventListener('pointerup', (e) => {
-    if (!isDragging) return;
-    isDragging = false;
-    card.releasePointerCapture(e.pointerId);
-    
-    // Restore smooth indicator transitions for release phase
-    likeInd.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
-    discardInd.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
-    
-    // Clear indicator opacities
-    likeInd.style.opacity = 0;
-    discardInd.style.opacity = 0;
-    
-    likeInd.style.transform = 'translateY(-50%) scale(0.5)';
-    discardInd.style.transform = 'translateY(-50%) scale(0.5)';
-    
-    const deltaX = e.clientX - startX;
-    const deltaY = e.clientY - startY;
-    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-    
-    // Tap detection: small distance triggers movie info panel (FR-3.4)
-    if (distance < 6) {
-      openMovieDetails(state.viewStateStack[0]);
-      card.classList.add('snap-back');
-      card.style.transform = '';
+    const handleRelease = (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      try {
+        card.releasePointerCapture(e.pointerId);
+      } catch (err) {}
       
-      const nextCard = card.previousElementSibling;
-      if (nextCard) {
-        nextCard.style.transform = '';
-        nextCard.style.opacity = '';
-      }
-      return;
-    }
-    
-    // Threshold validation: commit vs. snap-back (Swipe Up is removed)
-    if (deltaX > 120) {
-      commitSwipe('right');
-    } else if (deltaX < -120) {
-      commitSwipe('left');
-    } else {
-      // Bounce back top card
-      card.classList.add('snap-back');
-      card.style.transform = '';
+      // Restore smooth indicator transitions for release phase
+      likeInd.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+      discardInd.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
       
-      // Bounce back secondary card underneath
-      const nextCard = card.previousElementSibling;
-      if (nextCard) {
-        nextCard.style.transition = 'transform 0.4s ease, opacity 0.4s ease';
-        nextCard.style.transform = 'scale(0.94)';
-        nextCard.style.opacity = '0.85';
-        setTimeout(() => {
-          nextCard.style.transition = '';
-        }, 400);
+      // Clear indicator opacities
+      likeInd.style.opacity = 0;
+      discardInd.style.opacity = 0;
+      
+      likeInd.style.transform = 'translateY(-50%) scale(0.5)';
+      discardInd.style.transform = 'translateY(-50%) scale(0.5)';
+      
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      
+      // Tap detection: small distance triggers movie info panel (FR-3.4)
+      if (distance < 6) {
+        openMovieDetails(state.viewStateStack[0]);
+        card.classList.add('snap-back');
+        card.style.transform = '';
+        
+        const nextCard = card.previousElementSibling;
+        if (nextCard) {
+          nextCard.style.transform = '';
+          nextCard.style.opacity = '';
+        }
+        return;
       }
-    }
-  });
+      
+      // Threshold validation: commit vs. snap-back (Swipe Up is removed)
+      if (deltaX > 120) {
+        commitSwipe('right');
+      } else if (deltaX < -120) {
+        commitSwipe('left');
+      } else {
+        // Bounce back top card
+        card.classList.add('snap-back');
+        card.style.transform = '';
+        
+        // Bounce back secondary card underneath
+        const nextCard = card.previousElementSibling;
+        if (nextCard) {
+          nextCard.style.transition = 'transform 0.4s ease, opacity 0.4s ease';
+          nextCard.style.transform = 'scale(0.94)';
+          nextCard.style.opacity = '0.85';
+          setTimeout(() => {
+            nextCard.style.transition = '';
+          }, 400);
+        }
+      }
+    };
 
-  card.addEventListener('pointercancel', () => {
-    isDragging = false;
-    likeInd.style.opacity = 0;
-    discardInd.style.opacity = 0;
-    card.classList.add('snap-back');
-    card.style.transform = '';
-    
-    const nextCard = card.previousElementSibling;
-    if (nextCard) {
-      nextCard.style.transform = 'scale(0.94)';
-      nextCard.style.opacity = '0.85';
-    }
-  });
+    card.addEventListener('pointerup', handleRelease);
+    card.addEventListener('pointercancel', handleRelease);
+
 }
 
 // Processes the swiping decisions
@@ -879,7 +879,7 @@ function openMovieDetails(movie) {
   detailTitle.textContent = movie.title;
   detailYear.textContent = movie.release_date ? movie.release_date.split('-')[0] : 'N/A';
   detailRating.textContent = `⭐ ${movie.vote_average ? movie.vote_average.toFixed(1) : 'NR'}`;
-  detailLang.textContent = movie.original_language.toUpperCase();
+  detailLang.textContent = (movie.original_language || 'EN').toUpperCase();
   
   // Render genre badges (no emojis!)
   detailGenres.innerHTML = '';
@@ -1042,7 +1042,7 @@ function renderOptimizationReport(data) {
       <div class="gauge-text">${topProvider.match_percentage}%</div>
     </div>
     
-    ${logoUrl ? `<img class="winner-logo" src="${logoUrl}" alt="${topProvider.provider_name}">` : `<h3 class="winner-name">${topProvider.provider_name}</h3>`}
+    ${logoUrl ? `<img class="winner-logo" src="${logoUrl}" alt="${topProvider.provider_name}" onerror="this.onerror=null; this.outerHTML='<h3 class=\"winner-name\">${topProvider.provider_name}</h3>';">` : `<h3 class="winner-name">${topProvider.provider_name}</h3>`}
     
     <p class="winner-text" style="margin-top: 12px;">
       Matches <strong>${topProvider.match_percentage}%</strong> (${topProvider.match_count} of ${state.likedArray.length}) of your picks.
@@ -1069,7 +1069,7 @@ function renderOptimizationReport(data) {
       
       const firstLetter = prov.provider_name.charAt(0);
       const logoHtml = prov.logo_path 
-        ? `<img src="https://image.tmdb.org/t/p/w92${prov.logo_path}" alt="${prov.provider_name}">`
+        ? `<img src="https://image.tmdb.org/t/p/w92${prov.logo_path}" alt="${prov.provider_name}" onerror="this.onerror=null; this.outerHTML='<span>${firstLetter}</span>';">`
         : `<span>${firstLetter}</span>`;
         
       row.innerHTML = `
