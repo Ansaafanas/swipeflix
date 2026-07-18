@@ -980,10 +980,10 @@ function simulateLocalOptimizationReport() {
   });
   
   const logoPaths = {
-    "Netflix": "/peURlLhxptfv1QGIHGQwveUsR61.jpg",
-    "Amazon Prime Video": "/9A1s49tdr34ZBc60nGNnF7N63gP.jpg",
-    "Hulu": "/db814HG4qnnmZ22Uc8UB46vH4aB.jpg",
-    "Disney+": "/7rw0EsR9ky7BF4R5fs7PwZgZu7y.jpg",
+    "Netflix": "/wwemzKWzjKYJFfCeiB57q3r4Bcm.png",
+    "Amazon Prime Video": "/giwV9dD17482t72YxV65xJ0rM4n.jpg",
+    "Hulu": "/bxBlRPEPpMVDc4jMhSrTf2339DW.jpg",
+    "Disney+": "/97yvRBw1GzX7fXprcF80er19ot.jpg",
     "Max": "/fksCUZ9QDWZMUwL2LgMtLckROUN.jpg",
     "Apple TV+": "/4k11wY2Zg95pT0tT8L4G8636B4D.jpg"
   };
@@ -1005,6 +1005,20 @@ function simulateLocalOptimizationReport() {
     totalLikedWithProviderData: state.likedArray.length
   });
 }
+
+// Helper methods to cleanly replace broken provider logos without inline HTML double-quote syntax parsing errors (FR-5.4)
+window.handleWinnerLogoError = function(img, providerName) {
+  const h3 = document.createElement('h3');
+  h3.className = 'winner-name';
+  h3.textContent = providerName;
+  img.replaceWith(h3);
+};
+
+window.handleRowLogoError = function(img, firstLetter) {
+  const span = document.createElement('span');
+  span.textContent = firstLetter;
+  img.replaceWith(span);
+};
 
 // Renders the final Cost Optimization Dashboard (FR-5.2 - FR-5.5)
 function renderOptimizationReport(data) {
@@ -1042,7 +1056,7 @@ function renderOptimizationReport(data) {
       <div class="gauge-text">${topProvider.match_percentage}%</div>
     </div>
     
-    ${logoUrl ? `<img class="winner-logo" src="${logoUrl}" alt="${topProvider.provider_name}" onerror="this.onerror=null; this.outerHTML='<h3 class=\"winner-name\">${topProvider.provider_name}</h3>';">` : `<h3 class="winner-name">${topProvider.provider_name}</h3>`}
+    ${logoUrl ? `<img class="winner-logo" src="${logoUrl}" alt="${topProvider.provider_name}" onerror="handleWinnerLogoError(this, '${topProvider.provider_name}')">` : `<h3 class="winner-name">${topProvider.provider_name}</h3>`}
     
     <p class="winner-text" style="margin-top: 12px;">
       Matches <strong>${topProvider.match_percentage}%</strong> (${topProvider.match_count} of ${state.likedArray.length}) of your picks.
@@ -1069,7 +1083,7 @@ function renderOptimizationReport(data) {
       
       const firstLetter = prov.provider_name.charAt(0);
       const logoHtml = prov.logo_path 
-        ? `<img src="https://image.tmdb.org/t/p/w92${prov.logo_path}" alt="${prov.provider_name}" onerror="this.onerror=null; this.outerHTML='<span>${firstLetter}</span>';">`
+        ? `<img src="https://image.tmdb.org/t/p/w92${prov.logo_path}" alt="${prov.provider_name}" onerror="handleRowLogoError(this, '${firstLetter}')">`
         : `<span>${firstLetter}</span>`;
         
       row.innerHTML = `
