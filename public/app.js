@@ -174,11 +174,6 @@ const detailSynopsis = document.getElementById('detail-synopsis');
 const likeOverlay = document.querySelector('.like-overlay');
 const discardOverlay = document.querySelector('.discard-overlay');
 
-// Media type badge elements
-const mediaTypeBadge  = document.getElementById('media-type-badge');
-const mediaTypeIcon   = document.getElementById('media-type-icon');
-const mediaTypeLabel  = document.getElementById('media-type-label');
-
 
 // ==========================================
 // INITIALIZATION
@@ -557,21 +552,6 @@ async function hydrateBuffer(attempts = 1) {
   }
 }
 
-// Update the media-type badge based on the current top card
-function updateMediaTypeBadge() {
-  if (!mediaTypeBadge) return;
-  const topItem = state.viewStateStack[0];
-  if (!topItem) {
-    mediaTypeBadge.classList.remove('type-movie', 'type-tv');
-    return;
-  }
-  const isTV = topItem.media_type === 'tv';
-  mediaTypeIcon.textContent  = isTV ? '📺' : '🎬';
-  mediaTypeLabel.textContent = isTV ? 'TV Series' : 'Movie';
-  mediaTypeBadge.classList.toggle('type-tv',    isTV);
-  mediaTypeBadge.classList.toggle('type-movie', !isTV);
-}
-
 // Display loader in card area
 function renderStackLoading() {
   cardStack.innerHTML = `
@@ -649,9 +629,6 @@ function renderStack() {
     }
     state.undoAnimating = null;
   }
-
-  // Update the floating media-type badge to reflect the new top card
-  updateMediaTypeBadge();
 }
 
 // Creates single DOM element representing card
@@ -667,6 +644,10 @@ function createCardElement(movie, isTopCard) {
   const releaseYear = movie.release_date ? movie.release_date.split('-')[0] : 'N/A';
   const rating = movie.vote_average ? movie.vote_average.toFixed(1) : 'NR';
 
+  const isTV = movie.media_type === 'tv';
+  const badgeClass = isTV ? 'badge-tv' : 'badge-movie';
+  const badgeLabel = isTV ? 'TV Series' : 'Movie';
+
   card.innerHTML = `
     <div class="card-poster-wrapper">
       
@@ -677,6 +658,9 @@ function createCardElement(movie, isTopCard) {
       <div class="card-indicator indicator-discard">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </div>
+
+      <!-- Media type badge: lives inside the card so it animates with the poster -->
+      <span class="card-media-badge ${badgeClass}">${badgeLabel}</span>
 
       <img class="card-poster" src="${posterUrl}" alt="${movie.title}" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=500&auto=format&fit=crop';" loading="lazy">
       <div class="card-overlay">
