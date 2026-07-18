@@ -988,15 +988,29 @@ function simulateLocalOptimizationReport() {
     "Apple TV+": "/4k11wY2Zg95pT0tT8L4G8636B4D.jpg"
   };
 
+  const providerLinks = {
+    "netflix": "https://www.netflix.com",
+    "amazon prime video": "https://www.primevideo.com",
+    "hulu": "https://www.hulu.com",
+    "disney+": "https://www.disneyplus.com",
+    "disney plus": "https://www.disneyplus.com",
+    "max": "https://www.max.com",
+    "hbo max": "https://www.max.com",
+    "apple tv+": "https://tv.apple.com",
+    "apple tv plus": "https://tv.apple.com"
+  };
+
   const providersList = Object.keys(providers).map(name => {
     const matchCount = providers[name];
     const matchPercentage = Math.round((matchCount / state.likedArray.length) * 100);
+    const cleanKey = name.toLowerCase().trim();
+    const directLink = providerLinks[cleanKey] || `https://google.com/search?q=${encodeURIComponent(name)}`;
     return {
       provider_name: name,
       match_count: matchCount,
       match_percentage: matchPercentage,
       logo_path: logoPaths[name] || null,
-      affiliate_link: `https://click.swipeflix.com/redirect?provider=${encodeURIComponent(name.toLowerCase())}`
+      affiliate_link: directLink
     };
   }).sort((a,b) => b.match_percentage - a.match_percentage);
   

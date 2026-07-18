@@ -611,16 +611,27 @@ app.post('/api/optimize', async (req, res) => {
         ? Math.round((matchCount / movieIds.length) * 100)
         : 0;
       
-      // Map to trackable affiliate links (simulated for v1.0, complying with NFR-2.3)
-      const cleanName = encodeURIComponent(name.toLowerCase().replace(/\s+/g, '-'));
-      const affiliateLink = `https://click.swipeflix.com/redirect?provider=${cleanName}&region=${region}&campaign=mvp_opt`;
+      const providerLinks = {
+        "netflix": "https://www.netflix.com",
+        "amazon prime video": "https://www.primevideo.com",
+        "hulu": "https://www.hulu.com",
+        "disney+": "https://www.disneyplus.com",
+        "disney plus": "https://www.disneyplus.com",
+        "max": "https://www.max.com",
+        "hbo max": "https://www.max.com",
+        "apple tv+": "https://tv.apple.com",
+        "apple tv plus": "https://tv.apple.com"
+      };
+      
+      const cleanKey = name.toLowerCase().trim();
+      const directLink = providerLinks[cleanKey] || `https://google.com/search?q=${encodeURIComponent(name)}`;
 
       return {
         provider_name: name,
         logo_path: details[name] || '',
         match_count: matchCount,
         match_percentage: matchPercentage,
-        affiliate_link: affiliateLink
+        affiliate_link: directLink
       };
     });
 
