@@ -3,9 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>bingbingbinge - Swipe Movies, Save Money</title>
-  <meta name="description" content="Discover movies with a Tinder-style swiping interface and get a cost-optimized streaming report tailored to your likes.">
+  
+  <!-- Main SEO Title & Snippet -->
+  <title>bingbingbinge — Instant Movie Curator & Cost Optimizer</title>
+  <meta name="description" content="An instant, no-login streaming tool. Swipe through movie recommendations and optimize your subscription matrix costs in one click.">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  
+  <!-- Open Graph / Social Sharing Meta Layers -->
+  <meta property="og:title" content="bingbingbinge — Instant Movie Curator & Cost Optimizer">
+  <meta property="og:description" content="No logins, no friction. Just open and immediately find what to watch while optimizing your streaming costs.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://bingbingbinge.vercel.app/">
+  <meta property="og:image" content="https://bingbingbinge.vercel.app/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <!-- Core Web Vitals Performance Optimization: DNS Prefetch / Preconnect -->
+  <link rel="preconnect" href="https://api.themoviedb.org">
   
   <!-- Fonts: Outfit (headings) & Inter (UI/Body) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,6 +27,25 @@
   
   <!-- Main Stylesheet -->
   <link rel="stylesheet" href="style.css">
+
+  <!-- Schema.org JSON-LD Structured Data Cheat-Code -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "bingbingbinge",
+    "url": "https://bingbingbinge.vercel.app/",
+    "applicationCategory": "EntertainmentApplication",
+    "operatingSystem": "All",
+    "browserRequirements": "Requires JavaScript. Requires HTML5.",
+    "description": "A zero-login interactive movie recommendation engine and streaming service cost optimizer.",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
 </head>
 <body>
 

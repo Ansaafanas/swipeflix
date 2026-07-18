@@ -760,7 +760,7 @@ function createCardElement(movie, isTopCard) {
       <!-- Media type badge: lives inside the card so it animates with the poster -->
       <span class="card-media-badge ${badgeClass}">${badgeLabel}</span>
 
-      <img class="card-poster" src="${posterUrl}" alt="${movie.title}" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=500&auto=format&fit=crop';" loading="lazy">
+      <img class="card-poster" src="${posterUrl}" alt="${movie.title}" width="500" height="750" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=500&auto=format&fit=crop';" loading="lazy">
       <div class="card-overlay">
         <h2 class="card-title">${movie.title}</h2>
         <div class="card-meta">
